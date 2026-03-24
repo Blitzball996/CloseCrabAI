@@ -1,0 +1,22 @@
+# CloseCrab ≈‰÷√Œƒº˛
+server:
+  port: 9001
+  host: "127.0.0.1"
+
+database:
+  path: "data/closecrab.db"
+
+logging:
+  level: "info"
+  file: "logs/closecrab.log"
+
+# LLM ≈‰÷√
+llm:
+  model_path: "Qwen2.5-7B-Instruct-Uncensored.Q4_K_M.gguf"
+  max_tokens: 512
+  temperature: 0.7
+
+# WebSocket ≈‰÷√
+websocket:
+  enabled: true
+  port: 9001

@@ -1,0 +1,41 @@
+# 构建产物
+out/
+build/
+models/
+external/
+cmake-build-*/
+.vs/
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.zip
+
+# 模型文件（太大）
+models/*.gguf
+*.gguf
+*.bin
+
+# 数据库
+data/
+*.db
+
+# IDE 配置（保留 .qtcreator 但忽略用户特定文件）
+.qtcreator/
+*.user
+*.creator.user*
+
+# VS Code
+.vscode/
+
+# 临时文件
+*.tmp
+*.log
+*.swp
+*.swo
+
+# 系统文件
+Thumbs.db
+.DS_Store
