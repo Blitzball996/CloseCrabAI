@@ -8,7 +8,7 @@
 [![C++17](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-12.6-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Windows](https://img.shields.io/badge/Platform-Windows-0078d7.svg)](https://www.microsoft.com/)
-[![Release](https://img.shields.io/github/v/release/BigDickMok/CloseCrab)](https://github.com/BigDickMok/CloseCrab/releases)<a class="xsj_anchor xsj_anchor_range xsj_anchor_range_start" name="xsj_1774354231371"></a>
+[![Release](https://img.shields.io/github/v/release/Blitzball996/CloseCrab)](https://github.com/Blitzball996/CloseCrab/releases)<a class="xsj_anchor xsj_anchor_range xsj_anchor_range_start" name="xsj_1774354231371"></a>
 <a class="xsj_anchor xsj_anchor_range xsj_anchor_range_end" name="xsj_1774354231371"></a>
 
 **CloseCrab** is a secure, high-performance local AI execution engine written in C++. It runs large language models on your own hardware, gives the AI the ability to execute skills (open apps, read/write files, search the web), and protects your system with a built-in security sandbox.
@@ -100,6 +100,15 @@ wget https://github.com/yourusername/CloseCrab/releases/download/v1.0.0/CloseCra
 
 *   `search_web` - 网络搜索
 
+*   `screenshot` - 屏幕截取
+
+*   `systeminfo` - 获取系统信息
+
+*   `clipboard`   - 操作剪贴板
+
+*   `weather`       - 获取天气信息
+
+*   `ReadBinaryFile` - 读取二进制文件
 # 构建 CloseCrab
 
 ## 系统要求
