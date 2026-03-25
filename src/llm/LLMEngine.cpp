@@ -30,6 +30,7 @@ LLMEngine::LLMEngine(const std::string& modelPath, int cpuMoeLayers)
     model_params.use_mmap = true;
     model_params.use_mlock = false;
 
+    
     // 处理 n_cpu_moe
     if (m_cpuMoeLayers > 0) {
         static std::vector<llama_model_tensor_buft_override> overrides;
@@ -52,6 +53,8 @@ LLMEngine::LLMEngine(const std::string& modelPath, int cpuMoeLayers)
 
     spdlog::info("Loading model from: {}", modelPath);
     spdlog::info("GPU layers: auto (-1)");
+
+    spdlog::info("CPU MoE layers: {}", m_cpuMoeLayers);
 
     // 加载模型
     model = llama_load_model_from_file(modelPath.c_str(), model_params);

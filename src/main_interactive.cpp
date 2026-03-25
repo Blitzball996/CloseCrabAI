@@ -241,6 +241,7 @@ void printHelp() {
     std::cout << "  /sandbox auto     - Auto block dangerous actions" << std::endl;
     std::cout << "  /sandbox trusted  - Trusted mode (log only)" << std::endl;
     std::cout << "  /rag       - Show rag status" << std::endl;
+    std::cout << "  /cpu-moe <N> - Force CPU expert layers to run on cpu" << std::endl;
     std::cout << "  /audit     - Show audit log" << std::endl;
     std::cout << "  /quit      - Exit the program" << std::endl;
     std::cout << "\nJust type your message to chat with AI." << std::endl;
@@ -408,6 +409,21 @@ int main(int argc, char* argv[]) {
     int maxTokens = config.getInt("llm.max_tokens", 512);
     float temperature = static_cast<float>(config.getDouble("llm.temperature", 0.7));
 
+    // ========== 在这里插入自动检测 MoE 的代码 ==========
+    if (app.count("--n-cpu-moe") == 0) {
+        std::string modelFilename = std::filesystem::path(modelPath).filename().string();
+        std::string lowerFilename = modelFilename;
+        for (auto& c : lowerFilename) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (lowerFilename.find("moe") != std::string::npos) {
+            n_cpu_moe = 4;
+            spdlog::info("Detected MoE model ({}), automatically setting CPU MoE layers to {}",
+                modelFilename, n_cpu_moe);
+        }
+    }
+    // ===============================================
+
     spdlog::info("========================================");
     spdlog::info("CloseCrab Interactive Mode");
     spdlog::info("========================================");
@@ -438,9 +454,9 @@ int main(int argc, char* argv[]) {
     spdlog::info("Thread pool size: {}", threadPool.getThreadCount());
 
     spdlog::info("Loading model... This may take a moment.");
-    LLMEngine llm(modelPath, n_cpu_moe);
-
-    if (!llm.isLoaded()) {
+    std::unique_ptr<LLMEngine> llm;
+    llm = std::make_unique<LLMEngine>(modelPath, n_cpu_moe);
+    if (!llm->isLoaded()) {
         spdlog::error("Failed to load model!");
         WSACleanup();
         return 1;
@@ -542,7 +558,7 @@ int main(int argc, char* argv[]) {
             fullPrompt += buildUserMessage(message);
             fullPrompt += "<|im_start|>assistant\n";
 
-            std::string response = llm.generateRaw(fullPrompt, maxTokens, temperature);
+            std::string response = llm->generateRaw(fullPrompt, maxTokens, temperature);
 
             if (!response.empty()) {
                 memorySystem.addMemory(activeSessionId, "assistant", response);
@@ -599,7 +615,7 @@ int main(int argc, char* argv[]) {
             fullPrompt += "<|im_start|>assistant\n";
 
             // 生成回复
-            std::string response = llm.generateRaw(fullPrompt, maxTokens, temperature);
+            std::string response = llm->generateRaw(fullPrompt, maxTokens, temperature);
 
             // 解析并执行技能
             std::string finalResponse = parseAndExecuteSkill(response);
@@ -842,6 +858,39 @@ int main(int argc, char* argv[]) {
             std::cout << "\033[33m==================\033[0m" << std::endl;
             continue;
         }
+
+        // 新增命令：/cpu-moe <N>
+        if (input.rfind("/cpu-moe ", 0) == 0) {
+            std::string numStr = input.substr(9);
+            try {
+                int newCpuMoe = std::stoi(numStr);
+                if (newCpuMoe < 0) newCpuMoe = 0;
+
+                spdlog::info("Reloading model with CPU MoE layers = {}", newCpuMoe);
+
+                // 关键：先彻底销毁旧引擎
+                llm.reset();  // 调用析构函数，释放资源
+
+                // 等待资源释放（尤其是 GPU 资源）
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+                // 创建新引擎
+                llm = std::make_unique<LLMEngine>(modelPath, newCpuMoe);
+
+                if (!llm->isLoaded()) {
+                    spdlog::error("Failed to reload model with new CPU MoE setting.");
+                    // 可选：尝试恢复默认值或退出
+                }
+                else {
+                    spdlog::info("Model reloaded successfully with CPU MoE layers = {}", newCpuMoe);
+                }
+            }
+            catch (const std::exception& e) {
+                spdlog::error("Invalid number: {}", numStr);
+            }
+            continue;
+        }
+
         // 跳过空输入
         if (input.empty()) {
             continue;
@@ -971,7 +1020,7 @@ int main(int argc, char* argv[]) {
 
         // 3. 添加当前用户消息
         fullPrompt += buildUserMessage(input);
-
+        
         // 4. 添加助手开始标记
         fullPrompt += "<|im_start|>assistant\n";
 
@@ -980,7 +1029,7 @@ int main(int argc, char* argv[]) {
 
         // 调试信息（verbose 模式）
         if (verbose) {
-            int totalTokens = llm.countTokens(fullPrompt);
+            int totalTokens = llm->countTokens(fullPrompt);
             spdlog::debug("Full prompt tokens: {}", totalTokens);
             spdlog::debug("History entries: {}", memories.size());
         }
@@ -992,7 +1041,7 @@ int main(int argc, char* argv[]) {
         bool firstToken = true;
 
         // 流式生成回复
-        llm.generateRaw(
+        llm->generateRaw(
             fullPrompt,
             maxTokens,
             temperature,
