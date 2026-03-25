@@ -12,7 +12,7 @@ struct llama_vocab;
 
 class LLMEngine {
 public:
-    LLMEngine(const std::string& modelPath);
+    LLMEngine(const std::string& modelPath, int cpuMoeLayers = 0);
     ~LLMEngine();
 
     std::string generate(const std::string& prompt,
@@ -47,6 +47,7 @@ private:
     struct llama_model* model = nullptr;
     struct llama_context* ctx = nullptr;
     const struct llama_vocab* vocab = nullptr;  // ÃÌº” vocab ≥…‘±
+    int m_cpuMoeLayers = 0;
 
     std::vector<int> stringToTokens(const std::string& text) const;
     std::string tokensToString(const std::vector<int>& tokens) const;

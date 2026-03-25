@@ -348,6 +348,8 @@ int main(int argc, char* argv[]) {
     app.add_option("-s,--session", sessionIdOverride, "Resume existing session");
     app.add_option("--http-port", httpPort, "HTTP API port (default: 8080)");
     app.add_flag("--no-http", noHttp, "Disable HTTP API server");
+    int n_cpu_moe = 0;   // 定义变量
+    app.add_option("--n-cpu-moe", n_cpu_moe, "Number of MoE expert layers to put on CPU (0 = all on GPU)");
 
     try {
         CLI11_PARSE(app, argc, argv);
@@ -436,7 +438,7 @@ int main(int argc, char* argv[]) {
     spdlog::info("Thread pool size: {}", threadPool.getThreadCount());
 
     spdlog::info("Loading model... This may take a moment.");
-    LLMEngine llm(modelPath);
+    LLMEngine llm(modelPath, n_cpu_moe);
 
     if (!llm.isLoaded()) {
         spdlog::error("Failed to load model!");

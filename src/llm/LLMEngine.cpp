@@ -11,7 +11,8 @@
 
 extern bool g_llama_log_enabled;
 
-LLMEngine::LLMEngine(const std::string& modelPath) {
+LLMEngine::LLMEngine(const std::string& modelPath, int cpuMoeLayers)
+    : m_cpuMoeLayers(cpuMoeLayers) {
     // 初始化 llama 后端
     llama_backend_init();
 
@@ -28,6 +29,26 @@ LLMEngine::LLMEngine(const std::string& modelPath) {
     model_params.n_gpu_layers = 99;  // 自动检测 GPU
     model_params.use_mmap = true;
     model_params.use_mlock = false;
+
+    // 处理 n_cpu_moe
+    if (m_cpuMoeLayers > 0) {
+        static std::vector<llama_model_tensor_buft_override> overrides;
+        static std::vector<std::string> patterns;
+
+        overrides.clear();
+        patterns.clear();
+        patterns.reserve(m_cpuMoeLayers);
+        overrides.reserve(m_cpuMoeLayers + 1);
+
+        for (int i = 0; i < m_cpuMoeLayers; ++i) {
+            // 匹配第 i 个专家块的所有相关张量（根据实际模型调整）
+            std::string pattern = "blk\\." + std::to_string(i) + "\\.ffn_(gate|up|down)";
+            patterns.push_back(pattern);
+            overrides.push_back({ patterns.back().c_str(), ggml_backend_cpu_buffer_type() });
+        }
+        overrides.push_back({ nullptr, nullptr });
+        model_params.tensor_buft_overrides = overrides.data();
+    }
 
     spdlog::info("Loading model from: {}", modelPath);
     spdlog::info("GPU layers: auto (-1)");

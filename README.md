@@ -144,7 +144,7 @@ cd external
 git clone https://github.com/ggerganov/llama.cpp.git
 cd llama.cpp
 mkdir build && cd build
-cmake .. -G "Visual Studio 17 2022" -A x64 -DLLAMA_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89
+cmake .. -G "Visual Studio 17 2022" -A x64 -DLLAMA_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=ALL
 cmake --build . --config Release
 ```
 

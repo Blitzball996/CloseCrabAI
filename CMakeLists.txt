@@ -162,6 +162,9 @@ endif()
 # ============================================
 set(LLAMA_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/llama.cpp")
 set(LLAMA_BUILD_PATH "${LLAMA_PATH}/build/src/Release")
+set(LLAMA_LIB_DIR "${LLAMA_PATH}/build/src/Release")
+# ggml 相关库位于 build/ggml/src/Release
+set(GGML_LIB_DIR "${LLAMA_PATH}/build/ggml/src/Release")
 
 if(EXISTS ${LLAMA_BUILD_PATH}/llama.lib)
     add_library(llama STATIC IMPORTED)
@@ -172,6 +175,42 @@ if(EXISTS ${LLAMA_BUILD_PATH}/llama.lib)
     message(STATUS "Using CUDA llama.lib from: ${LLAMA_BUILD_PATH}")
 else()
     message(FATAL_ERROR "CUDA llama.lib not found!")
+endif()
+
+# 添加 ggml 基础库
+if(EXISTS ${GGML_LIB_DIR}/ggml.lib)
+    add_library(ggml STATIC IMPORTED)
+    set_target_properties(ggml PROPERTIES
+        IMPORTED_LOCATION "${GGML_LIB_DIR}/ggml.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${LLAMA_PATH}/ggml/include"
+    )
+    message(STATUS "ggml.lib found: ${GGML_LIB_DIR}/ggml.lib")
+else()
+    message(FATAL_ERROR "ggml.lib not found!")
+endif()
+
+# 添加 ggml-base 库
+if(EXISTS ${GGML_LIB_DIR}/ggml-base.lib)
+    add_library(ggml-base STATIC IMPORTED)
+    set_target_properties(ggml-base PROPERTIES
+        IMPORTED_LOCATION "${GGML_LIB_DIR}/ggml-base.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${LLAMA_PATH}/ggml/include"
+    )
+    message(STATUS "ggml-base.lib found: ${GGML_LIB_DIR}/ggml-base.lib")
+else()
+    message(FATAL_ERROR "ggml-base.lib not found!")
+endif()
+
+# 添加 ggml-cpu 库
+if(EXISTS ${GGML_LIB_DIR}/ggml-cpu.lib)
+    add_library(ggml-cpu STATIC IMPORTED)
+    set_target_properties(ggml-cpu PROPERTIES
+        IMPORTED_LOCATION "${GGML_LIB_DIR}/ggml-cpu.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${LLAMA_PATH}/ggml/include"
+    )
+    message(STATUS "ggml-cpu.lib found: ${GGML_LIB_DIR}/ggml-cpu.lib")
+else()
+    message(FATAL_ERROR "ggml-cpu.lib not found!")
 endif()
 
 # ============================================
@@ -215,6 +254,9 @@ target_link_libraries(closecrab PRIVATE
     CLI11::CLI11
     ${SQLITE3_LIBRARIES}
     llama
+    ggml
+    ggml-base
+    ggml-cpu
     ${CURL_LIBRARIES}
     ws2_32
     wldap32
