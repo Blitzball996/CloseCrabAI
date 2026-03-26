@@ -36,6 +36,44 @@ find_package(ZLIB REQUIRED)
 
 include(FetchContent)
 
+# ============================================
+# ONNX Runtime - 预编译包
+# ============================================
+
+# 设置 ONNX Runtime 路径（根据你实际解压的版本修改）
+set(ONNXRUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/onnxruntime-win-x64-gpu-1.24.4")
+
+if(NOT EXISTS ${ONNXRUNTIME_DIR})
+    message(FATAL_ERROR 
+        "ONNX Runtime not found at: ${ONNXRUNTIME_DIR}\n"
+        "Please download from: https://github.com/microsoft/onnxruntime/releases\n"
+        "Download: onnxruntime-win-x64-gpu-1.24.4.zip and extract to external/"
+    )
+endif()
+
+# 添加 ONNX Runtime 库
+add_library(onnxruntime SHARED IMPORTED)
+set_target_properties(onnxruntime PROPERTIES
+    IMPORTED_LOCATION "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"
+    IMPORTED_IMPLIB "${ONNXRUNTIME_DIR}/lib/onnxruntime.lib"
+    INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_DIR}/include"
+)
+
+# 检查 CUDA provider 是否存在
+if(USE_ONNX_GPU AND EXISTS "${ONNXRUNTIME_DIR}/lib/onnxruntime_providers_cuda.dll")
+    add_definitions(-DUSE_ONNX_GPU)
+    message(STATUS "✅ ONNX Runtime GPU enabled (CUDA ${CUDAToolkit_VERSION} compatible)")
+    
+    add_library(onnxruntime_cuda SHARED IMPORTED)
+    set_target_properties(onnxruntime_cuda PROPERTIES
+        IMPORTED_LOCATION "${ONNXRUNTIME_DIR}/lib/onnxruntime_providers_cuda.dll"
+    )
+    set(ONNXRUNTIME_EXTRA_LIBS onnxruntime_cuda)
+else()
+    message(STATUS "⚠️  ONNX Runtime CPU only (CUDA provider not found)")
+    set(ONNXRUNTIME_EXTRA_LIBS "")
+endif()
+
 # spdlog
 FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
@@ -93,6 +131,12 @@ if(EXISTS ${IXWEBSOCKET_PATH}/CMakeLists.txt)
     add_subdirectory(${IXWEBSOCKET_PATH})
 else()
     message(FATAL_ERROR "ixwebsocket not found in external/")
+endif()
+
+# ONNX GPU 支持（如果需要）
+if(USE_ONNX_GPU)
+    add_definitions(-DUSE_ONNX_GPU)
+    find_package(CUDA REQUIRED)
 endif()
 
 # ============================================
@@ -163,6 +207,8 @@ add_executable(closecrab
     src/skills/WebSearchSkill.cpp
     src/security/Sandbox.cpp
     src/rag/RAGManager.cpp
+    src/rag/EmbeddingEngine.cpp
+    src/rag/RerankerEngine.cpp
 )
 
 # ============================================
@@ -179,6 +225,8 @@ target_link_libraries(closecrab PRIVATE
     CLI11::CLI11
     sqlite3
 
+    onnxruntime
+    ${ONNXRUNTIME_EXTRA_LIBS}
     faiss
     llama
     ggml
@@ -206,6 +254,7 @@ target_link_libraries(closecrab PRIVATE
 target_include_directories(closecrab PRIVATE
     src
     ${thread_pool_SOURCE_DIR}/include
+    ${ONNXRUNTIME_DIR}/include
     ${LLAMA_PATH}/include
     ${LLAMA_PATH}/ggml/include
     ${FAISS_DIR}/include
@@ -222,6 +271,22 @@ add_custom_command(TARGET closecrab POST_BUILD
     "${FAISS_DIR}/bin/faiss.dll"
     $<TARGET_FILE_DIR:closecrab>
 )
+
+# ONNX Runtime DLL
+add_custom_command(TARGET closecrab POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"
+        $<TARGET_FILE_DIR:closecrab>
+)
+
+# CUDA Provider DLL（如果存在）
+if(ONNXRUNTIME_EXTRA_LIBS)
+    add_custom_command(TARGET closecrab POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ONNXRUNTIME_DIR}/lib/onnxruntime_providers_cuda.dll"
+            $<TARGET_FILE_DIR:closecrab>
+    )
+endif()
 
 # ============================================
 # 输出

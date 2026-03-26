@@ -194,6 +194,12 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
     dimension = dim;
     indexType = type;
 
+    embeddingEngine = std::make_unique<EmbeddingEngine>(
+        "models/bge-small.onnx", true);
+
+    reranker = std::make_unique<RerankerEngine>(
+        "models/bge-reranker.onnx", true);
+
     // 创建数据库目录
     std::filesystem::path path(dbPath);
     std::filesystem::create_directories(path.parent_path());
@@ -441,35 +447,7 @@ void RAGManager::rebuildIndex() {
 // Embedding 函数（简化版，实际应使用真正的 embedding 模型）
 // ============================================
 std::vector<float> RAGManager::embed(const std::string& text) {
-    std::vector<float> result(dimension, 0.0f);
-
-    // 简单的 TF-IDF 风格的哈希特征
-    std::istringstream iss(text);
-    std::string word;
-    std::unordered_map<std::string, int> wordFreq;
-
-    while (iss >> word) {
-        wordFreq[word]++;
-    }
-
-    // 将词频转换为向量
-    int i = 0;
-    for (const auto& pair : wordFreq) {
-        if (i >= dimension) break;
-        size_t hash = std::hash<std::string>{}(pair.first);
-        result[i] = (float)((hash % 1000) / 1000.0) * pair.second;
-        i++;
-    }
-
-    // 归一化（内积需要）
-    float norm = 0.0f;
-    for (float v : result) norm += v * v;
-    if (norm > 0) {
-        norm = std::sqrt(norm);
-        for (float& v : result) v /= norm;
-    }
-
-    return result;
+    return embeddingEngine->encode(text);
 }
 
 // ============================================
@@ -609,62 +587,46 @@ bool RAGManager::loadDirectory(const std::string& path) {
 // 搜索
 // ============================================
 std::vector<Document> RAGManager::search(const std::string& query, int topK) {
+
     std::vector<Document> results;
 
-    if (!isEnabled()) {
-        return results;
+    if (!isEnabled()) return results;
+
+    auto queryEmbed = embeddingEngine->encode(query);
+
+    std::vector<float> distances(topK * 5);
+    std::vector<faiss::idx_t> indices(topK * 5);
+
+    //先多召回（重要）
+    currentIndex->search(1, queryEmbed.data(), topK * 5,
+        distances.data(), indices.data());
+
+    struct Candidate {
+        Document doc;
+        float score;
+    };
+
+    std::vector<Candidate> candidates;
+
+    for (int i = 0; i < topK * 5; i++) {
+        if (indices[i] < 0) continue;
+
+        int docId = idMap[indices[i]];
+        auto doc = getDocumentFromDB(docId);
+
+        float score = reranker->score(query, doc.content);
+
+        candidates.push_back({ doc, score });
     }
 
-    if (!initialized || currentIndex->ntotal == 0) {
-        return results;
-    }
+    // rerank排序
+    std::sort(candidates.begin(), candidates.end(),
+        [](auto& a, auto& b) {
+            return a.score > b.score;
+        });
 
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    try {
-        auto startTime = std::chrono::high_resolution_clock::now();
-
-        // 生成查询 embedding
-        std::vector<float> queryEmbed = embed(query);
-
-        // FAISS 搜索
-        std::vector<float> distances(topK);
-        std::vector<faiss::idx_t> indices(topK);
-
-        currentIndex->search(1, queryEmbed.data(), topK,
-            distances.data(), indices.data());
-
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-            endTime - startTime);
-
-        spdlog::debug("Search completed in {}ms using {}",
-            duration.count(),
-            currentDevice == DeviceType::GPU ? "GPU" : "CPU");
-
-        // 获取结果
-        for (int i = 0; i < topK; i++) {
-            if (indices[i] >= 0 && indices[i] < static_cast<faiss::idx_t>(idMap.size())) {
-                int docId = idMap[indices[i]];
-                Document doc = getDocumentFromDB(docId);
-                if (!doc.content.empty()) {
-                    results.push_back(doc);
-                }
-            }
-        }
-
-    }
-    catch (const std::exception& e) {
-        spdlog::error("Search failed: {}", e.what());
-
-        // 搜索失败时尝试降级到 CPU
-        if (currentDevice == DeviceType::GPU) {
-            spdlog::warn("GPU search failed, falling back to CPU");
-            currentIndex = cpuIndex;
-            currentDevice = DeviceType::CPU;
-            // 重试搜索
-            return search(query, topK);
-        }
+    for (int i = 0; i < topK && i < candidates.size(); i++) {
+        results.push_back(candidates[i].doc);
     }
 
     return results;

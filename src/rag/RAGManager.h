@@ -5,6 +5,8 @@
 #include <mutex>
 #include <optional>
 #include <map>
+#include "EmbeddingEngine.h"
+#include "RerankerEngine.h"
 
 // FAISS 前向声明
 namespace faiss {
@@ -91,6 +93,9 @@ public:
 
     // 手动切换设备
     bool switchDevice(DeviceType device);
+
+    std::unique_ptr<EmbeddingEngine> embeddingEngine;
+    std::unique_ptr<RerankerEngine> reranker;
 
 private:
     RAGManager() = default;
