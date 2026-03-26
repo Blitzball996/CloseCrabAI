@@ -1020,7 +1020,7 @@ int main(int argc, char* argv[]) {
 
         // 3. 添加当前用户消息
         fullPrompt += buildUserMessage(input);
-        
+
         // 4. 添加助手开始标记
         fullPrompt += "<|im_start|>assistant\n";
 

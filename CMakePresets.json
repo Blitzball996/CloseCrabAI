@@ -9,7 +9,13 @@
             "installDir": "${sourceDir}/out/install/${presetName}",
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "cl.exe",
-                "CMAKE_CXX_COMPILER": "cl.exe"
+                "CMAKE_CXX_COMPILER": "cl.exe",
+
+                "CMAKE_TOOLCHAIN_FILE": "G:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "VCPKG_TARGET_TRIPLET": "x64-windows"
+            },
+            "environment": {
+                "VCPKG_ROOT": "G:/vcpkg"
             },
             "condition": {
                 "type": "equals",

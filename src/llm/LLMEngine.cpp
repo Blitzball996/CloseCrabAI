@@ -30,7 +30,6 @@ LLMEngine::LLMEngine(const std::string& modelPath, int cpuMoeLayers)
     model_params.use_mmap = true;
     model_params.use_mlock = false;
 
-    
     // ´¦Àí n_cpu_moe
     if (m_cpuMoeLayers > 0) {
         static std::vector<llama_model_tensor_buft_override> overrides;
