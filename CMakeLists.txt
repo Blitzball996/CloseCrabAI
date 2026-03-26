@@ -24,14 +24,14 @@ endif()
 find_package(CUDAToolkit REQUIRED)
 
 # ============================================
-# vcpkg 依赖（统一入口）
+# vcpkg 依赖
 # ============================================
 
 find_package(CURL CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
 
 # ============================================
-# FetchContent（纯头或自编译）
+# FetchContent
 # ============================================
 
 include(FetchContent)
@@ -168,6 +168,9 @@ add_executable(closecrab
 # ============================================
 # 链接（核心）
 # ============================================
+
+# 设置 FAISS_GPU_ENABLED 宏
+add_definitions(-DFAISS_GPU_ENABLED)
 
 target_link_libraries(closecrab PRIVATE
     spdlog::spdlog

@@ -252,7 +252,6 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
 
     return true;
 }
-
 // ============================================
 // 创建数据库表
 // ============================================

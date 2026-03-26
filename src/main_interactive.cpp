@@ -17,6 +17,7 @@
 #include "skills/SkillManager.h"
 #include "skills/OpenAppSkill.h"
 #include "skills/ReadFileSkill.h"
+#include "skills/ReadBinarySkill.h"
 #include "skills/WriteFileSkill.h"
 #include "skills/ExecuteCommandSkill.h"
 #include "skills/WebSearchSkill.h"
@@ -501,6 +502,7 @@ int main(int argc, char* argv[]) {
     auto& skillManager = SkillManager::getInstance();
     skillManager.registerSkill(std::make_unique<OpenAppSkill>());
     skillManager.registerSkill(std::make_unique<ReadFileSkill>());
+    skillManager.registerSkill(std::make_unique<ReadBinarySkill>());
     skillManager.registerSkill(std::make_unique<WriteFileSkill>());
     skillManager.registerSkill(std::make_unique<ExecuteCommandSkill>());
     skillManager.registerSkill(std::make_unique<WebSearchSkill>());
