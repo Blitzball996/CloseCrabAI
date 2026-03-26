@@ -1,8 +1,10 @@
 
 
-# 🦀 CloseCrab — Secure Local AI Execution Engine—安全本地 AI 智能体引擎
+# 🦀 CloseCrab — Secure Local AI Execution Engine
 
-**CloseCrab** 是一个用 C++ 编写的本地 AI 执行引擎，专注于**安全、高性能、纯本地运行**。它让你在本地运行大语言模型，并赋予 AI 执行实际操作的技能，同时通过安全沙箱保护你的系统。
+**CloseCrab** 是一个用 C++ 编写的本地 AI 执行引擎，专注于**安全、高性能、纯本地运行**。
+无需云端，无需 Python，一键安装即可运行本地大模型。
+
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![C++17](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
@@ -23,14 +25,14 @@ Contact: kongshuangquan@gmail.com
 
 | Feature                      | Description                                                                        |
 | ---------------------------- | ---------------------------------------------------------------------------------- |
-| 🚀 **Local LLM Inference** | Run Qwen2.5-7B/14B/32B/Any models on your own GPU                                  |
+| 🚀 **Local LLM Inference** | Run Qwen2.5-7B/14B/32B/Deepseek MoE Any models on your own GPU                     |
 | 🎯 **GPU Acceleration**    | Full CUDA support with automatic layer allocation                                  |
 | 📝 **Streaming Output**    | Real-time token-by-token response like ChatGPT                                     |
 | 💾 **Conversation Memory** | SQLite-based session management with full history                                  |
 | 🛠️ **Skill System**      | AI can execute real actions: open apps, read/write files, run commands, search web |
 | 🔒 **Security Sandbox**    | 4 security modes (ASK/AUTO/TRUSTED/DISABLED) with audit logging                    |
 | 🌐 **Multiple Access**     | CLI, WebSocket (ws://localhost:9001), HTTP API (REST)                              |
-| 📚 **RAG Support**         | Load documents, vector search, retrieve relevant context                           |
+| 📚 **RAG Support**         | （FAISS）                                                                          |
 | ⚙️ **Full Control**        | Configure GPU layers, batch size, threads, MoE expert allocation                   |
 | ⚙️ **Lightweight**         | Single executable, no Python runtime, minimal dependencies                         |
 
@@ -45,32 +47,60 @@ wget https://github.com/yourusername/CloseCrab/releases/download/v1.0.0/CloseCra
 ```
 ## 安装
 
-1\. 下载 CloseCrab_Setup.exe
-2\. 双击运行安装程序
-3\. 按照提示完成安装
 
-## 下载模型
+1.  下载安装包：
 
-安装后，运行 `download_model.bat` 选择要下载的模型，或手动下载 GGUF 模型放到 `models` 文件夹。
+```
+CloseCrab_Setup.exe
+```
 
-推荐模型：
-- Qwen2.5-7B-Instruct-Q4_K_M.gguf (约 4.5GB)
-- Qwen2.5-14B-Instruct-Q4_K_M.gguf (约 8.5GB)
+1.  双击安装
+2.  安装过程中：
+    👉 选择模型（自动下载）
+    👉 自动写入配置
+3.  安装完成后直接运行
 
-下载地址：https://huggingface.co/Qwen
 
-## 配置模型
+
+## 🤖 模型说明
+
+安装时可选：
+
+| 模型 | 大小 | 推荐 |
+| --- | --- | --- |
+| Qwen2.5-7B | ~4.5GB | ⭐ 推荐 |
+| Qwen2.5-14B | ~8.5GB | 高性能 |
+| Qwen2.5-3B | ~2GB | 轻量 |
+| Qwen2.5-1.5B | ~1.2GB | 极速 |
+
+模型会自动下载到：
+
+```
+models/
+```
+
+
+## 配置自定义模型
 
 编辑 `config/config.yaml`，修改 `llm.model_path` 指向你的模型文件：
 
  model_path: "models/your-model.gguf"
   
+  注意如果运行报错Failed to Load Model，则需手动输入config.yaml中modelpath并保存
   
-## 运行
 
-双击桌面图标或运行 `closecrab.exe`
+## ▶️ 运行
 
-## 命令
+双击：
+
+```
+closecrab.exe
+```
+
+或桌面图标
+
+
+## 💬 常用命令
 
 *   `/help` - 显示帮助
 
@@ -88,53 +118,67 @@ wget https://github.com/yourusername/CloseCrab/releases/download/v1.0.0/CloseCra
 
 *   `/quit` - 退出
 
-## 技能
 
-*   `open_app` - 打开应用程序
+## 🛠️ 技能系统
 
-*   `read_file` - 读取文件
+*   open_app
+*   read_file
+*   write_file
+*   execute_command
+*   search_web
+*   screenshot
+*   systeminfo
+*   clipboard
+*   weather
+*   ReadBinaryFile
 
-*   `write_file` - 写入文件
 
-*   `execute_command` - 执行系统命令
+# ⚙️ 配置
 
-*   `search_web` - 网络搜索
+配置文件：
 
-*   `screenshot` - 屏幕截取
+```
+config/config.yaml
+```
 
-*   `systeminfo` - 获取系统信息
+核心字段：
 
-*   `clipboard`   - 操作剪贴板
+```
+llm:
+  model_path: "models/xxx.gguf"
+```
 
-*   `weather`       - 获取天气信息
 
-*   `ReadBinaryFile` - 读取二进制文件
-# 构建 CloseCrab
 
-## 系统要求
+# 🧱 构建（开发者）
+
+## 环境
 
 *   Windows 10/11
+*   Visual Studio 2022
+*   CMake 3.20+
+*   CUDA 12.x（可选）
 
-*   NVIDIA GPU（可选，有 GPU 更快）
+* * *
 
-*   8GB+ 内存
+## 依赖
 
-*   4GB+ 磁盘空间（模型文件）
-- Windows 10/11
-- Visual Studio 2022 (社区版或更高)
-- CMake 3.20+
-- Git
-- NVIDIA GPU (可选，用于 GPU 加速)
-- CUDA Toolkit 12.6 (如需 GPU 支持)
+*   llama.cpp（本地编译）
+*   FAISS（vcpkg）
+*   libcurl（vcpkg）
+*   OpenSSL
+*   ZLIB
 
-## 依赖库
 
-CloseCrab 使用 CMake FetchContent 自动下载大部分依赖，但部分库需要手动准备：
 
-- **llama.cpp**：用于本地 LLM 推理。建议手动克隆到 `external/llama.cpp`，并编译 CUDA 版本。
-- **OpenSSL**：需要手动安装 (用于 WebSocket)。下载地址：https://slproweb.com/products/Win32OpenSSL.html (选择 Win64 OpenSSL v3.6.1)
-- **ZLIB**：用于压缩，通过 CMake 自动下载，或手动编译。
-- **libcurl**：用于网络搜索，通过 vcpkg 安装。
+## 依赖
+
+*   llama.cpp（本地编译）
+*   FAISS（vcpkg）
+*   libcurl（vcpkg）
+*   OpenSSL
+*   ZLIB
+
 
 ### 下载 llama.cpp 并编译 CUDA 版本
 
@@ -148,104 +192,111 @@ cmake .. -G "Visual Studio 17 2022" -A x64 -DLLAMA_CUDA=ON -DCMAKE_CUDA_ARCHITEC
 cmake --build . --config Release
 ```
 
-### 安装 vcpkg 和 libcurl
 
-```powershell
-git clone https://github.com/Microsoft/vcpkg.git
+## 安装 vcpkg 依赖
+
+```
+git clone https://github.com/microsoft/vcpkg.git
 cd vcpkg
 .\bootstrap-vcpkg.bat
-.\vcpkg integrate install
 .\vcpkg install curl:x64-windows
-```
-## 构建步骤
-
-### 1\. 克隆仓库
-
-powershell
-
-```powershell
-git clone https://github.com/yourname/CloseCrab.git
-cd CloseCrab
+.\vcpkg install faiss:x64-windows
 ```
 
-### 2\. 准备依赖
 
-*   安装 OpenSSL（默认路径 `C:\Program Files\OpenSSL-Win64`）
+## 构建
 
-*   安装 vcpkg 并安装 curl（如上）
-
-*   编译 llama.cpp（如上）
-
-### 3\. 配置 CMake
-
-打开 Visual Studio 2022，选择“打开本地文件夹”，选择 CloseCrab 目录。CMake 会自动配置项目。
-
-或者使用命令行：
-
-```cmd
-cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=G:/vcpkg/scripts/buildsystems/vcpkg.cmake
 ```
+cmake -B build ^
+ -DCMAKE_TOOLCHAIN_FILE=G:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+ -DVCPKG_TARGET_TRIPLET=x64-windows ^
+ -DCMAKE_BUILD_TYPE=Release
 
-> 
-> 
-> 注意：`-DCMAKE_TOOLCHAIN_FILE` 指向 vcpkg 的工具链文件，以便找到 libcurl。
-> 
-> 
-
-### 4\. 编译
-
-在 Visual Studio 中，选择生成菜单 → 全部生成。或命令行：
-
-```cmd
 cmake --build build --config Release
 ```
 
-编译完成后，可执行文件位于 `build/Release/closecrab.exe`。
 
-### 5\. 运行
+## 🚨 重要说明（必须看）
 
-将 `config` 文件夹复制到 exe 同级目录，下载模型文件放入 `models` 文件夹，编辑 `config/config.yaml` 指定模型路径，然后运行 `closecrab.exe`。
+## ❗ 1\. 只使用 Release
 
-## 常见问题
+CloseCrab 为高性能推理引擎：
 
-### Q: 编译时找不到 curl/curl.h
+*   ❌ 不建议使用 Debug
+*   ❌ Debug 可能缺少 libcurl-d.dll
+*   ✅ 使用 Release 或 RelWithDebInfo
 
-A: 确保 vcpkg 已正确安装 curl，并在 CMake 配置时使用 vcpkg 工具链。如果手动指定，可在 CMakeLists.txt 中设置 `CURL_INCLUDE_DIR` 和 `CURL_LIBRARY`。
 
-### Q: 运行时缺少 DLL
 
-A: 将 `external\llama.cpp\build\bin\Release\llama.dll` 复制到 exe 目录。如果是 CUDA 版本，还需要 `cudart64_12.dll` 等。
+## ❗ 2\. 运行时报错缺 DLL
 
-### Q: GPU 加速未启用
+如果运行报错：
 
-A: 确保使用 CUDA 编译的 llama.dll，并在 `LLMEngine.cpp` 中设置 `model_params.n_gpu_layers = -1`。
+```
+缺少 libcurl.dll / faiss.dll
+```
 
-### Q: 如何切换 Debug/Release
+👉 原因：缺少运行时依赖
 
-在 Visual Studio 顶部工具栏选择配置，或命令行指定 `--config Debug`。
+### 解决：
 
-## 目录结构
+确保这些 DLL 在 exe 同目录：
 
-text
+*   libcurl.dll
+*   faiss.dll
+*   openblas.dll
+*   zlib1.dll
 
-<pre>CloseCrab/
-├── CMakeLists.txt
-├── config/
-│   └── config.yaml
+👉 推荐：通过 CMake 自动拷贝
+
+
+
+## ❗ 3\. GPU 不生效
+
+检查：
+
+*   CUDA 是否安装
+*   llama.cpp 是否 CUDA 编译
+*   是否设置：
+
+```
+n_gpu_layers = -1
+```
+
+
+# 📦 安装包说明
+
+安装器支持：
+
+*   自动拷贝所有 DLL
+*   自动下载模型（可选）
+*   自动生成 config.yaml
+*   创建桌面快捷方式
+
+
+
+# 📁 目录结构
+
+```
+CloseCrab/
 ├── src/
-│   ├── main_interactive.cpp
-│   ├── config/
-│   ├── core/
-│   ├── llm/
-│   ├── memory/
-│   ├── network/
-│   ├── security/
-│   ├── skills/
-│   └── rag/
+├── config/
+├── models/
+├── data/
 ├── external/
-│   ├── llama.cpp/
-│   ├── ixwebsocket/
-│   └── ...
-├── models/            (用户放置模型文件)
-├── data/              (运行时数据库)
-└── build/             (编译输出)</pre>
+├── build/
+└── closecrab.exe
+```
+
+# 🧠 项目定位
+
+CloseCrab 不是 Demo，而是：
+
+👉 **本地 AI Agent 执行引擎**
+
+目标：
+
+*   替代云 AI
+*   本地隐私计算
+*   可扩展技能系统
+*   高性能推理
