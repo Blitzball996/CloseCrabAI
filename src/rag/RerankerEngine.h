@@ -1,11 +1,13 @@
 ﻿#pragma once
 #include <vector>
 #include <string>
+#include <memory>
 #include <onnxruntime_cxx_api.h>
 
 class RerankerEngine {
 public:
     RerankerEngine(const std::string& modelPath, bool useGPU = true);
+    ~RerankerEngine() = default;
 
     float score(const std::string& query, const std::string& doc);
 

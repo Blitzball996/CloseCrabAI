@@ -195,7 +195,7 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
     indexType = type;
 
     embeddingEngine = std::make_unique<EmbeddingEngine>(
-        "models/bge-small.onnx", true);
+        "models/model_quantized.onnx", true);
 
     reranker = std::make_unique<RerankerEngine>(
         "models/bge-reranker.onnx", true);
