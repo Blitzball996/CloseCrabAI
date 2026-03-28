@@ -6,8 +6,10 @@
 #include <random>
 #include <algorithm>
 #include <vector>
+#include "../ssd/SSDExpertStreamer.h"
 #include <fstream>
 #include <thread>
+
 
 extern bool g_llama_log_enabled;
 
@@ -464,4 +466,62 @@ int LLMEngine::countTokens(const std::string& text) const {
     // 使用临时 batch 来获取 token 数量
     std::vector<int> tokens = stringToTokens(text);
     return static_cast<int>(tokens.size());
+}
+
+bool LLMEngine::initSSDStreaming(const std::string& expertDir,
+    size_t cacheSizeMB,
+    size_t gpuCacheSizeMB) {
+    if (!isLoaded()) {
+        spdlog::error("Model must be loaded before initializing SSD streaming");
+        return false;
+    }
+
+    SSDStreamerConfig config;
+    config.expertDir = expertDir;
+    config.cacheSizeMB = cacheSizeMB;
+    config.gpuCacheSizeMB = gpuCacheSizeMB;
+    config.useMemoryMap = true;
+    config.ioThreads = 4;
+    config.enablePrefetch = true;
+    config.prefetchDepth = 1;
+
+    // 尝试从 manifest.json 读取模型参数
+    std::string manifestPath = expertDir + "/manifest.json";
+    std::ifstream mf(manifestPath);
+    if (mf.is_open()) {
+        spdlog::info("Found expert manifest: {}", manifestPath);
+        // 这里可以解析 JSON 来自动设置参数
+        // 简化版：使用默认的 Qwen3.5-397B 参数
+        mf.close();
+    }
+
+    // Qwen3.5-397B-A17B 的参数
+    // 如果你的模型不同，请修改这些值
+    config.numLayers = 60;
+    config.numExperts = 128;     // 每层的路由专家数
+    config.activeExperts = 4;    // 每个 token 激活 K=4 个
+    config.sharedExperts = 1;    // 共享专家
+    config.hiddenDim = 4096;
+    config.quantBits = 4;        // Q4 量化
+    config.groupSize = 128;
+
+    m_ssdStreamer = std::make_unique<SSDExpertStreamer>();
+    if (!m_ssdStreamer->init(config)) {
+        spdlog::error("Failed to initialize SSD Expert Streamer");
+        m_ssdStreamer.reset();
+        return false;
+    }
+
+    spdlog::info("SSD Expert Streaming initialized successfully!");
+    spdlog::info("{}", m_ssdStreamer->getStatusString());
+    return true;
+}
+
+std::string LLMEngine::getSSDStreamerStatus() const {
+    if (!m_ssdStreamer) return "SSD Streaming: not initialized";
+    return m_ssdStreamer->getStatusString();
+}
+
+bool LLMEngine::isSSDStreamingEnabled() const {
+    return m_ssdStreamer != nullptr && m_ssdStreamer->isInitialized();
 }

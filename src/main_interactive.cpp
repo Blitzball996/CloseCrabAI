@@ -28,6 +28,7 @@
 #include "security/Sandbox.h"
 #include "network/HttpServer.h"
 #include "rag/RAGManager.h"
+#include "ssd/SSDExpertStreamer.h"
 
 bool g_llama_log_enabled = false;
 bool running = true;
@@ -243,6 +244,7 @@ void printHelp() {
     std::cout << "  /sandbox trusted  - Trusted mode (log only)" << std::endl;
     std::cout << "  /rag       - Show rag status" << std::endl;
     std::cout << "  /cpu-moe <N> - Force CPU expert layers to run on cpu" << std::endl;
+    std::cout << "  /ssd       - Show SSD streaming status" << std::endl;
     std::cout << "  /audit     - Show audit log" << std::endl;
     std::cout << "  /quit      - Exit the program" << std::endl;
     std::cout << "\nJust type your message to chat with AI." << std::endl;
@@ -352,6 +354,13 @@ int main(int argc, char* argv[]) {
     app.add_flag("--no-http", noHttp, "Disable HTTP API server");
     int n_cpu_moe = 0;   // 定义变量
     app.add_option("--n-cpu-moe", n_cpu_moe, "Number of MoE expert layers to put on CPU (0 = all on GPU)");
+    // ← 新增：SSD streaming 参数
+    std::string ssdExpertDir = "";
+    size_t ssdCacheMB = 32768;       // 默认 32GB RAM 缓存
+    size_t ssdGpuCacheMB = 4096;     // 默认 4GB GPU 缓存
+    app.add_option("--expert-dir", ssdExpertDir, "Packed expert files directory for SSD streaming");
+    app.add_option("--ssd-cache-mb", ssdCacheMB, "SSD streamer RAM cache size in MB (default: 32768)");
+    app.add_option("--ssd-gpu-cache-mb", ssdGpuCacheMB, "SSD streamer GPU cache size in MB (default: 4096)");
 
     try {
         CLI11_PARSE(app, argc, argv);
@@ -464,6 +473,27 @@ int main(int argc, char* argv[]) {
     }
 
     spdlog::info("Model loaded successfully!");
+
+    // ← 新增：初始化 SSD Expert Streaming
+    if (!ssdExpertDir.empty()) {
+        spdlog::info("Initializing SSD Expert Streaming from: {}", ssdExpertDir);
+        if (llm->initSSDStreaming(ssdExpertDir, ssdCacheMB, ssdGpuCacheMB)) {
+            spdlog::info("SSD Expert Streaming: ENABLED");
+        }
+        else {
+            spdlog::warn("SSD Expert Streaming: initialization FAILED (continuing without)");
+        }
+    }
+    else {
+        // 自动检测：如果 packed_experts/ 目录存在，自动启用
+        std::string autoExpertDir = exeDir + "\\packed_experts";
+        if (std::filesystem::exists(autoExpertDir)) {
+            spdlog::info("Auto-detected packed_experts directory: {}", autoExpertDir);
+            if (llm->initSSDStreaming(autoExpertDir, ssdCacheMB, ssdGpuCacheMB)) {
+                spdlog::info("SSD Expert Streaming: auto-ENABLED");
+            }
+        }
+    }
 
     /*
     // ========== 中文测试代码 ==========
@@ -782,6 +812,19 @@ int main(int argc, char* argv[]) {
         }
         if (input == "/audit") {
             showAuditLog();
+            continue;
+        }
+        // ← 新增：SSD Streaming 命令
+        if (input == "/ssd") {
+            if (llm->isSSDStreamingEnabled()) {
+                std::cout << "\n\033[33m=== SSD Expert Streaming ===\033[0m" << std::endl;
+                std::cout << llm->getSSDStreamerStatus() << std::endl;
+                std::cout << "\033[33m============================\033[0m" << std::endl;
+            }
+            else {
+                std::cout << "SSD Expert Streaming: not initialized" << std::endl;
+                std::cout << "Use --expert-dir <path> to enable" << std::endl;
+            }
             continue;
         }
         // ========== 新增：RAG命令 ==========

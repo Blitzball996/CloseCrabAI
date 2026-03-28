@@ -209,7 +209,18 @@ add_executable(closecrab
     src/rag/RAGManager.cpp
     src/rag/EmbeddingEngine.cpp
     src/rag/RerankerEngine.cpp
+    src/ssd/SSDExpertStreamer.cpp
 )
+
+# ============================================
+# ✅ SSD Expert Streaming - 编译定义
+# ============================================
+if(USE_CUDA_EXPERT_CACHE)
+    target_compile_definitions(closecrab PRIVATE USE_CUDA_EXPERT_CACHE)
+    message(STATUS "✅ SSD Expert Streaming: GPU cache ENABLED (CUDA)")
+else()
+    message(STATUS "⚠️  SSD Expert Streaming: GPU cache DISABLED (CPU-only cache)")
+endif()
 
 # ============================================
 # 链接（核心）
@@ -263,6 +274,15 @@ target_include_directories(closecrab PRIVATE
 )
 
 # ============================================
+# ✅ extract_experts 独立工具
+# ============================================
+ 
+add_executable(extract_experts
+    tools/extract_experts.cpp
+)
+target_compile_features(extract_experts PRIVATE cxx_std_17)
+
+# ============================================
 # ✅ 自动复制 DLL（关键！！！）
 # ============================================
 
@@ -295,4 +315,6 @@ endif()
 message(STATUS "========================================")
 message(STATUS "CloseCrab v${PROJECT_VERSION}")
 message(STATUS "MSVC Runtime: ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+message(STATUS "SSD Expert Streaming: ENABLED")
+message(STATUS "  GPU Cache: ${USE_CUDA_EXPERT_CACHE}")
 message(STATUS "========================================")

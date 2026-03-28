@@ -9,6 +9,8 @@
 struct llama_model;
 struct llama_context;
 struct llama_vocab;
+class SSDExpertStreamer;
+struct SSDStreamerConfig;
 
 class LLMEngine {
 public:
@@ -43,6 +45,18 @@ public:
     // 计算文本的 token 数量
     int countTokens(const std::string& text) const;
 
+    // ====== SSD Expert Streaming ======
+    // 初始化 SSD 流式专家加载（用于 MoE 大模型）
+    bool initSSDStreaming(const std::string& expertDir,
+        size_t cacheSizeMB = 4096,
+        size_t gpuCacheSizeMB = 1024);
+
+    // 获取 SSD Streamer 状态信息
+    std::string getSSDStreamerStatus() const;
+
+    // 是否启用了 SSD 流式加载
+    bool isSSDStreamingEnabled() const;
+
 private:
     struct llama_model* model = nullptr;
     struct llama_context* ctx = nullptr;
@@ -55,4 +69,7 @@ private:
         int maxTokens,
         float temperature,
         std::function<void(const std::string&)> onToken);
+
+    // SSD Expert Streamer（MoE 大模型专用）
+    std::unique_ptr<SSDExpertStreamer> m_ssdStreamer;
 };
