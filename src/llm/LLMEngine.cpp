@@ -255,6 +255,33 @@ std::string LLMEngine::generate(const std::string& prompt,
         return "";
     }
 
+    // ====== 新增：防止 token 数超过上下文窗口导致崩溃 ======
+    int maxCtx = (int)llama_n_ctx(ctx);
+    if ((int)inputTokens.size() > maxCtx - 4) {
+        spdlog::warn("Input too long: {} tokens (max context: {}), truncating",
+            inputTokens.size(), maxCtx);
+        // 保留开头的系统 prompt（约 200 token）+ 截取末尾
+        int keepFront = 200;
+        int keepBack = maxCtx - keepFront - 4;  // 留 4 个 token 给生成
+        if (keepBack > 0 && (int)inputTokens.size() > keepFront + keepBack) {
+            std::vector<int> truncated;
+            truncated.insert(truncated.end(),
+                inputTokens.begin(),
+                inputTokens.begin() + keepFront);
+            truncated.insert(truncated.end(),
+                inputTokens.end() - keepBack,
+                inputTokens.end());
+            inputTokens = std::move(truncated);
+            spdlog::info("Truncated to {} tokens", inputTokens.size());
+        }
+        else {
+            inputTokens.resize(maxCtx - 4);
+        }
+    }
+    // ====== 截断保护结束 ======
+
+    //generateTokensStreaming(inputTokens, maxTokens, temperature, onToken);
+
     std::vector<int> allTokens = inputTokens;
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -263,7 +290,16 @@ std::string LLMEngine::generate(const std::string& prompt,
     const int n_vocab = llama_n_vocab(vocab);
 
     for (int i = 0; i < maxTokens; ++i) {
-        llama_batch batch = llama_batch_get_one(allTokens.data(), allTokens.size());
+        llama_batch batch;
+        if (i == 0) {
+            // 第一次：送入全部输入 token（prefill）
+            batch = llama_batch_get_one(allTokens.data(), (int)allTokens.size());
+        }
+        else {
+            // 后续：只送最后一个新 token（decode）
+            batch = llama_batch_get_one(&allTokens.back(), 1);
+        }
+
         int n_eval = llama_decode(ctx, batch);
         if (n_eval != 0) {
             spdlog::error("Failed to evaluate model");
@@ -331,8 +367,21 @@ void LLMEngine::generateRaw(const std::string& fullPrompt,
     
     // 使用与原上下文相同的参数重新创建
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = 65536;    // 与原值保持一致
-    ctx_params.n_batch = 1024;
+    // 根据模型大小自动调整上下文
+    size_t modelSizeMB = llama_model_size(model) / 1024 / 1024;
+    if (modelSizeMB > 50000) {
+        // 超大模型（>50GB）：保守上下文
+        ctx_params.n_ctx = 32768;
+    }
+    else if (modelSizeMB > 10000) {
+        // 大模型（10-50GB）
+        ctx_params.n_ctx = 65536;
+    }
+    else {
+        // 小模型：可以给大上下文
+        ctx_params.n_ctx = 131072;
+    }
+    ctx_params.n_batch = 8192;
     ctx_params.n_threads = std::thread::hardware_concurrency();
     ctx_params.n_seq_max = 1;
     

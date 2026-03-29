@@ -192,41 +192,94 @@ std::string parseAndExecuteSkill(const std::string& response) {
 // UI 函数
 // ============================================
 
+// ============================================================
+// 修复 Windows 控制台输入字符数限制
+// ============================================================
+//
+// 用下面的函数替换 main_interactive.cpp 中的 getUserInput()
+// （原来在第 194-229 行）
+//
+// 原来的问题：std::getline + cmd.exe 最多输入约 4096 字符
+// 修复后：使用 ReadConsoleW 直接读取，支持最多 65536 字符
+//         并且直接输出 UTF-8，不再需要 gbkToUtf8 转换
+// ============================================================
+
 std::string getUserInput() {
-    std::string input;
     std::cout << "\n\033[32mYou:\033[0m " << std::flush;
+
+#ifdef _WIN32
+    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    if (hStdin == INVALID_HANDLE_VALUE) {
+        // 回退到标准输入
+        std::string input;
+        std::getline(std::cin, input);
+        return gbkToUtf8(input);
+    }
+
+    // 保存原始控制台模式
+    DWORD originalMode = 0;
+    GetConsoleMode(hStdin, &originalMode);
+
+    // 设置控制台为 UTF-16 行输入模式
+    // ENABLE_LINE_INPUT: 按回车才返回
+    // ENABLE_ECHO_INPUT: 显示打字内容
+    // ENABLE_PROCESSED_INPUT: 处理 Ctrl+C 等
+    SetConsoleMode(hStdin, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+
+    // 用大缓冲区读取（最多 64K 个 wchar = 128KB）
+    const DWORD bufSize = 65536;
+    std::vector<wchar_t> wBuf(bufSize);
+    DWORD charsRead = 0;
+
+    BOOL ok = ReadConsoleW(hStdin, wBuf.data(), bufSize - 1, &charsRead, NULL);
+
+    // 恢复原始控制台模式
+    SetConsoleMode(hStdin, originalMode);
+
+    if (!ok || charsRead == 0) {
+        return "";
+    }
+
+    // 去掉末尾的 \r\n
+    while (charsRead > 0 && (wBuf[charsRead - 1] == L'\r' || wBuf[charsRead - 1] == L'\n')) {
+        charsRead--;
+    }
+
+    if (charsRead == 0) {
+        return "";
+    }
+
+    wBuf[charsRead] = L'\0';
+
+    // UTF-16 → UTF-8（直接输出 UTF-8，不再经过 GBK）
+    int utf8Size = WideCharToMultiByte(CP_UTF8, 0, wBuf.data(), (int)charsRead,
+        nullptr, 0, nullptr, nullptr);
+    if (utf8Size <= 0) {
+        return "";
+    }
+
+    std::string result(utf8Size, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wBuf.data(), (int)charsRead,
+        &result[0], utf8Size, nullptr, nullptr);
+
+    // 去掉末尾可能残留的 null
+    while (!result.empty() && result.back() == '\0') {
+        result.pop_back();
+    }
+
+    // trim 首尾空格
+    size_t start = result.find_first_not_of(" \t");
+    size_t end = result.find_last_not_of(" \t");
+    if (start == std::string::npos) return "";
+    result = result.substr(start, end - start + 1);
+
+    return result;  // 已经是 UTF-8，不需要 gbkToUtf8()
+
+#else
+    std::string input;
     std::getline(std::cin, input);
-
-    /*
-    // 调试：打印原始输入（转码前）
-    std::string rawHex;
-    for (unsigned char c : input) {
-        char buf[4];
-        sprintf(buf, "%02X ", c);
-        rawHex += buf;
-    }
-    spdlog::info("RAW INPUT hex: {}", rawHex);
-
-    // 去除换行符
-    input.erase(std::remove(input.begin(), input.end(), '\r'), input.end());
-    input.erase(std::remove(input.begin(), input.end(), '\n'), input.end());
-
-    // 去除首尾空格
-    input.erase(0, input.find_first_not_of(" \t"));
-    input.erase(input.find_last_not_of(" \t") + 1);
-
-    // 调试：打印处理后的十六进制
-    std::string cleanedHex;
-    for (unsigned char c : input) {
-        char buf[4];
-        sprintf(buf, "%02X ", c);
-        cleanedHex += buf;
-    }
-    spdlog::info("CLEANED INPUT hex: {}", cleanedHex);
-    spdlog::info("CLEANED INPUT length: {}", input.length());
-    */
-
-    return gbkToUtf8(input);
+    return input;
+#endif
 }
 
 void printHelp() {
