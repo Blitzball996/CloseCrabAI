@@ -210,70 +210,68 @@ std::string getUserInput() {
 #ifdef _WIN32
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     if (hStdin == INVALID_HANDLE_VALUE) {
-        // 回退到标准输入
         std::string input;
         std::getline(std::cin, input);
         return gbkToUtf8(input);
     }
 
-    // 保存原始控制台模式
     DWORD originalMode = 0;
     GetConsoleMode(hStdin, &originalMode);
-
-    // 设置控制台为 UTF-16 行输入模式
-    // ENABLE_LINE_INPUT: 按回车才返回
-    // ENABLE_ECHO_INPUT: 显示打字内容
-    // ENABLE_PROCESSED_INPUT: 处理 Ctrl+C 等
     SetConsoleMode(hStdin, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
 
-    // 用大缓冲区读取（最多 64K 个 wchar = 128KB）
-    const DWORD bufSize = 65536;
-    std::vector<wchar_t> wBuf(bufSize);
-    DWORD charsRead = 0;
+    std::string result;
+    bool firstLine = true;
 
-    BOOL ok = ReadConsoleW(hStdin, wBuf.data(), bufSize - 1, &charsRead, NULL);
+    while (true) {
+        const DWORD bufSize = 65536;
+        std::vector<wchar_t> wBuf(bufSize);
+        DWORD charsRead = 0;
 
-    // 恢复原始控制台模式
+        BOOL ok = ReadConsoleW(hStdin, wBuf.data(), bufSize - 1, &charsRead, NULL);
+        if (!ok || charsRead == 0) break;
+
+        // 去掉末尾 \r\n
+        while (charsRead > 0 && (wBuf[charsRead - 1] == L'\r' || wBuf[charsRead - 1] == L'\n')) {
+            charsRead--;
+        }
+        wBuf[charsRead] = L'\0';
+
+        // UTF-16 → UTF-8
+        int utf8Size = WideCharToMultiByte(CP_UTF8, 0, wBuf.data(), (int)charsRead,
+            nullptr, 0, nullptr, nullptr);
+        if (utf8Size > 0) {
+            std::string line(utf8Size, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, wBuf.data(), (int)charsRead,
+                &line[0], utf8Size, nullptr, nullptr);
+            while (!line.empty() && line.back() == '\0') line.pop_back();
+
+            if (!firstLine) result += "\n";
+            result += line;
+            firstLine = false;
+        }
+
+        // 关键：检查控制台输入缓冲区里是否还有待处理的数据
+        // 如果有 = 用户在粘贴多行文本，继续读取
+        // 如果没有 = 用户打完了，返回结果
+        DWORD eventsAvailable = 0;
+        GetNumberOfConsoleInputEvents(hStdin, &eventsAvailable);
+        if (eventsAvailable == 0) {
+            // 等一小段时间，看看是不是粘贴还没完成
+            Sleep(50);  // 50ms
+            GetNumberOfConsoleInputEvents(hStdin, &eventsAvailable);
+            if (eventsAvailable == 0) {
+                break;  // 确实没有更多输入了，返回
+            }
+        }
+    }
+
     SetConsoleMode(hStdin, originalMode);
 
-    if (!ok || charsRead == 0) {
-        return "";
-    }
-
-    // 去掉末尾的 \r\n
-    while (charsRead > 0 && (wBuf[charsRead - 1] == L'\r' || wBuf[charsRead - 1] == L'\n')) {
-        charsRead--;
-    }
-
-    if (charsRead == 0) {
-        return "";
-    }
-
-    wBuf[charsRead] = L'\0';
-
-    // UTF-16 → UTF-8（直接输出 UTF-8，不再经过 GBK）
-    int utf8Size = WideCharToMultiByte(CP_UTF8, 0, wBuf.data(), (int)charsRead,
-        nullptr, 0, nullptr, nullptr);
-    if (utf8Size <= 0) {
-        return "";
-    }
-
-    std::string result(utf8Size, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wBuf.data(), (int)charsRead,
-        &result[0], utf8Size, nullptr, nullptr);
-
-    // 去掉末尾可能残留的 null
-    while (!result.empty() && result.back() == '\0') {
-        result.pop_back();
-    }
-
-    // trim 首尾空格
-    size_t start = result.find_first_not_of(" \t");
-    size_t end = result.find_last_not_of(" \t");
+    // trim
+    size_t start = result.find_first_not_of(" \t\r\n");
+    size_t end = result.find_last_not_of(" \t\r\n");
     if (start == std::string::npos) return "";
-    result = result.substr(start, end - start + 1);
-
-    return result;  // 已经是 UTF-8，不需要 gbkToUtf8()
+    return result.substr(start, end - start + 1);
 
 #else
     std::string input;
