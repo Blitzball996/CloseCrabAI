@@ -13,7 +13,7 @@ namespace faiss {
     class Index;
 }
 
-// GPU 支持（如果可用）
+// GPU 支持（条件编译）
 #ifdef FAISS_GPU_ENABLED
 namespace faiss {
     namespace gpu {
@@ -49,7 +49,7 @@ class RAGManager {
 public:
     static RAGManager& getInstance();
 
-    // 初始化
+    // 初始化 — 模型路径从 config.yaml 读取
     bool init(const std::string& dbPath = "data/vectors.db",
         IndexType type = IndexType::FLAT,
         DeviceType device = DeviceType::AUTO,
@@ -94,6 +94,10 @@ public:
     // 手动切换设备
     bool switchDevice(DeviceType device);
 
+    /// 检查 embedding / reranker 模型文件是否存在
+    /// 返回缺失的模型名称列表（空 = 全部就绪）
+    static std::vector<std::string> checkModelFiles();
+
     std::unique_ptr<EmbeddingEngine> embeddingEngine;
     std::unique_ptr<RerankerEngine> reranker;
 
@@ -106,7 +110,7 @@ private:
     bool m_enabled = false;
     mutable std::mutex m_mutex;
 
-    // FAISS 相关
+    // FAISS 索引
     faiss::Index* cpuIndex = nullptr;
     faiss::Index* gpuIndex = nullptr;
     faiss::Index* currentIndex = nullptr;
@@ -123,7 +127,7 @@ private:
     std::vector<int64_t> idMap;
     std::map<int64_t, int> reverseIdMap;
 
-    // 辅助函数
+    // 内部方法
     std::vector<float> embed(const std::string& text);
     std::vector<std::string> splitText(const std::string& text, int chunkSize = 500);
 
@@ -132,10 +136,10 @@ private:
     void rebuildIndex();
     bool createCPUIndex();
     bool createGPUIndex();
-    bool copyIndexToGPU();  // 复制 CPU 索引到 GPU
-    bool copyIndexToCPU();  // 复制 GPU 索引到 CPU
+    bool copyIndexToGPU();
+    bool copyIndexToCPU();
     bool checkGPUAvailability();
-    bool isGPUMemorySufficient();  // 检查显存是否足够
+    bool isGPUMemorySufficient();
 
     // 数据库操作
     bool insertDocumentToDB(int docId, const std::string& content,

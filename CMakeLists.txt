@@ -209,6 +209,7 @@ add_executable(closecrab
     src/rag/RAGManager.cpp
     src/rag/EmbeddingEngine.cpp
     src/rag/RerankerEngine.cpp
+    src/rag/Wordpiecetokenizer.cpp
     src/ssd/SSDExpertStreamer.cpp
 )
 

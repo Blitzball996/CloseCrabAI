@@ -10,7 +10,7 @@
 #include <chrono>
 #include <vector>
 #include <map>
-#include <unordered_map>  // 添加缺失的头文件
+#include <unordered_map>
 
 // FAISS 头文件
 #include <faiss/IndexFlat.h>
@@ -28,8 +28,47 @@ extern "C" {
 #include <sqlite3.h>
 }
 
+// ---- 简易 YAML 读取（与项目现有的 config 机制对齐） ----
+// 如果你的项目已经有 ConfigManager，可以替换这段
+#include <yaml-cpp/yaml.h>
+
+namespace {
+    struct RAGConfig {
+        std::string embeddingModelPath = "models/bge-small-zh/model.onnx";
+        std::string embeddingVocabPath = "models/bge-small-zh/vocab.txt";
+        std::string rerankerModelPath = "models/bge-reranker-base/model.onnx";
+        std::string rerankerVocabPath = "models/bge-reranker-base/vocab.txt";
+    };
+
+    RAGConfig loadRAGConfig(const std::string& configFile = "config/config.yaml") {
+        RAGConfig cfg;
+        try {
+            if (!std::filesystem::exists(configFile)) {
+                spdlog::warn("Config file not found: {}, using defaults", configFile);
+                return cfg;
+            }
+            YAML::Node root = YAML::LoadFile(configFile);
+            if (root["rag"]) {
+                auto rag = root["rag"];
+                if (rag["embedding_model_path"])
+                    cfg.embeddingModelPath = rag["embedding_model_path"].as<std::string>();
+                if (rag["embedding_vocab_path"])
+                    cfg.embeddingVocabPath = rag["embedding_vocab_path"].as<std::string>();
+                if (rag["reranker_model_path"])
+                    cfg.rerankerModelPath = rag["reranker_model_path"].as<std::string>();
+                if (rag["reranker_vocab_path"])
+                    cfg.rerankerVocabPath = rag["reranker_vocab_path"].as<std::string>();
+            }
+        }
+        catch (const std::exception& e) {
+            spdlog::warn("Failed to parse config: {}, using defaults", e.what());
+        }
+        return cfg;
+    }
+}
+
 // ============================================
-// 单例模式
+// 单例
 // ============================================
 RAGManager& RAGManager::getInstance() {
     static RAGManager instance;
@@ -54,7 +93,7 @@ RAGManager::~RAGManager() {
 }
 
 // ============================================
-// 启用/禁用
+// 启用 / 禁用
 // ============================================
 void RAGManager::setEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -74,7 +113,38 @@ void RAGManager::toggleEnabled() {
 }
 
 // ============================================
-// GPU 可用性检查
+// 检查模型文件是否存在
+// ============================================
+std::vector<std::string> RAGManager::checkModelFiles() {
+    auto cfg = loadRAGConfig();
+    std::vector<std::string> missing;
+
+    if (!std::filesystem::exists(cfg.embeddingModelPath)) {
+        missing.push_back("Embedding model: " + cfg.embeddingModelPath);
+    }
+    if (!std::filesystem::exists(cfg.embeddingVocabPath)) {
+        missing.push_back("Embedding vocab: " + cfg.embeddingVocabPath);
+    }
+    if (!std::filesystem::exists(cfg.rerankerModelPath)) {
+        missing.push_back("Reranker model: " + cfg.rerankerModelPath);
+    }
+    if (!std::filesystem::exists(cfg.rerankerVocabPath)) {
+        missing.push_back("Reranker vocab: " + cfg.rerankerVocabPath);
+    }
+
+    if (!missing.empty()) {
+        spdlog::warn("Missing RAG model files:");
+        for (const auto& m : missing) {
+            spdlog::warn("  - {}", m);
+        }
+        spdlog::warn("Run download_model.bat to download required models.");
+    }
+
+    return missing;
+}
+
+// ============================================
+// GPU 检测
 // ============================================
 #ifdef FAISS_GPU_ENABLED
 bool RAGManager::checkGPUAvailability() {
@@ -147,10 +217,7 @@ bool RAGManager::createGPUIndex() {
         switch (indexType) {
         case IndexType::FLAT: {
             gpuIndex = new faiss::gpu::GpuIndexFlatIP(
-                gpuResources.get(),
-                dimension,
-                config
-            );
+                gpuResources.get(), dimension, config);
             spdlog::info("Created GPU Flat index (dim={})", dimension);
             break;
         }
@@ -159,14 +226,9 @@ bool RAGManager::createGPUIndex() {
             int nlist = 100;
             faiss::gpu::GpuIndexIVFFlatConfig ivfConfig;
             ivfConfig.device = 0;
-
             gpuIndex = new faiss::gpu::GpuIndexIVFFlat(
-                gpuResources.get(),
-                dimension,
-                nlist,
-                faiss::METRIC_INNER_PRODUCT,
-                ivfConfig
-            );
+                gpuResources.get(), dimension, nlist,
+                faiss::METRIC_INNER_PRODUCT, ivfConfig);
             spdlog::info("Created GPU IVF index (nlist={})", nlist);
             break;
         }
@@ -185,7 +247,7 @@ bool RAGManager::createGPUIndex() {
 #endif
 
 // ============================================
-// 初始化
+// 初始化 — 从 config.yaml 读取模型路径
 // ============================================
 bool RAGManager::init(const std::string& dbPath, IndexType type,
     DeviceType device, int dim) {
@@ -194,13 +256,39 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
     dimension = dim;
     indexType = type;
 
-    embeddingEngine = std::make_unique<EmbeddingEngine>(
-        "models/model_quantized.onnx", true);
+    // ---- 从 config.yaml 读取 RAG 模型路径 ----
+    auto cfg = loadRAGConfig();
 
-    reranker = std::make_unique<RerankerEngine>(
-        "models/bge-reranker.onnx", true);
+    // 检查模型文件
+    auto missing = checkModelFiles();
+    if (!missing.empty()) {
+        spdlog::error("Cannot initialize RAG: missing model files. "
+            "Run download_model.bat to download them.");
+        // 仍然继续初始化数据库和索引，但不加载模型
+        // 这样用户可以先添加文档，下载模型后再启用 RAG
+    }
 
-    // 创建数据库目录
+    // 加载 Embedding 引擎（带真正的 WordPiece tokenizer）
+    try {
+        embeddingEngine = std::make_unique<EmbeddingEngine>(
+            cfg.embeddingModelPath, cfg.embeddingVocabPath, true);
+    }
+    catch (const std::exception& e) {
+        spdlog::error("Failed to load embedding model: {}", e.what());
+        spdlog::error("Path: {} / {}", cfg.embeddingModelPath, cfg.embeddingVocabPath);
+    }
+
+    // 加载 Reranker 引擎（带真正的 WordPiece tokenizer）
+    try {
+        reranker = std::make_unique<RerankerEngine>(
+            cfg.rerankerModelPath, cfg.rerankerVocabPath, true);
+    }
+    catch (const std::exception& e) {
+        spdlog::error("Failed to load reranker model: {}", e.what());
+        spdlog::error("Path: {} / {}", cfg.rerankerModelPath, cfg.rerankerVocabPath);
+    }
+
+    // 数据库目录
     std::filesystem::path path(dbPath);
     std::filesystem::create_directories(path.parent_path());
 
@@ -211,12 +299,12 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
         return false;
     }
 
-    // 创建表
+    // 建表
     if (!createTables()) {
         return false;
     }
 
-    // 创建 CPU 索引（总是创建，作为 fallback）
+    // 创建 CPU 索引（始终作为 fallback）
     if (!createCPUIndex()) {
         spdlog::error("Failed to create CPU index");
         return false;
@@ -226,7 +314,7 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
     currentIndex = cpuIndex;
     currentDevice = DeviceType::CPU;
 
-    // 尝试使用 GPU（如果启用且请求）
+    // 尝试使用 GPU
 #ifdef FAISS_GPU_ENABLED
     if ((device == DeviceType::GPU || device == DeviceType::AUTO) && checkGPUAvailability()) {
         if (createGPUIndex()) {
@@ -244,7 +332,7 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
     }
 #endif
 
-    // 从数据库加载现有数据
+    // 从数据库恢复
     if (!loadIndexFromDatabase()) {
         spdlog::info("No existing data found, starting with empty index");
     }
@@ -258,13 +346,13 @@ bool RAGManager::init(const std::string& dbPath, IndexType type,
 
     return true;
 }
+
 // ============================================
-// 创建数据库表
+// 数据库建表
 // ============================================
 bool RAGManager::createTables() {
     char* errMsg = nullptr;
 
-    // 创建文档表
     const char* sql_docs = R"(
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,7 +369,6 @@ bool RAGManager::createTables() {
         return false;
     }
 
-    // 创建 FTS5 全文搜索表作为 fallback
     const char* sql_fts = R"(
         CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
             content, 
@@ -324,7 +411,6 @@ bool RAGManager::loadIndexFromDatabase() {
     idMap.clear();
     reverseIdMap.clear();
 
-    // 收集所有向量
     std::vector<float> allVectors;
     std::vector<int> docIds;
 
@@ -346,7 +432,6 @@ bool RAGManager::loadIndexFromDatabase() {
     sqlite3_finalize(stmt);
 
     if (count > 0) {
-        // 训练 IVF 索引（如果需要）
         if (indexType == IndexType::IVF) {
             auto* ivfIndex = dynamic_cast<faiss::IndexIVFFlat*>(cpuIndex);
             if (ivfIndex && !ivfIndex->is_trained) {
@@ -355,10 +440,8 @@ bool RAGManager::loadIndexFromDatabase() {
             }
         }
 
-        // 添加向量到 CPU 索引
         cpuIndex->add(count, allVectors.data());
 
-        // 更新 ID 映射
         for (int i = 0; i < count; i++) {
             idMap.push_back(docIds[i]);
             reverseIdMap[docIds[i]] = i;
@@ -366,10 +449,8 @@ bool RAGManager::loadIndexFromDatabase() {
 
         spdlog::info("Loaded {} vectors from database", count);
 
-        // 如果当前使用 GPU，也添加到 GPU 索引
 #ifdef FAISS_GPU_ENABLED
         if (currentDevice == DeviceType::GPU && gpuIndex) {
-            // 对于 IVF，需要先训练
             if (indexType == IndexType::IVF) {
                 auto* ivfGpuIndex = dynamic_cast<faiss::gpu::GpuIndexIVFFlat*>(gpuIndex);
                 if (ivfGpuIndex && !ivfGpuIndex->is_trained) {
@@ -394,10 +475,8 @@ void RAGManager::rebuildIndex() {
 
     spdlog::info("Rebuilding index...");
 
-    // 保存当前设备类型
     DeviceType targetDevice = currentDevice;
 
-    // 删除旧索引
     if (cpuIndex) {
         delete cpuIndex;
         cpuIndex = nullptr;
@@ -409,13 +488,11 @@ void RAGManager::rebuildIndex() {
     }
 #endif
 
-    // 重新创建 CPU 索引
     if (!createCPUIndex()) {
         spdlog::error("Failed to recreate CPU index");
         return;
     }
 
-    // 根据目标设备设置当前索引
     if (targetDevice == DeviceType::GPU) {
 #ifdef FAISS_GPU_ENABLED
         if (createGPUIndex()) {
@@ -437,16 +514,19 @@ void RAGManager::rebuildIndex() {
         currentDevice = DeviceType::CPU;
     }
 
-    // 重新加载数据
     loadIndexFromDatabase();
 
     spdlog::info("Index rebuilt, new size: {}", currentIndex->ntotal);
 }
 
 // ============================================
-// Embedding 函数（简化版，实际应使用真正的 embedding 模型）
+// Embedding
 // ============================================
 std::vector<float> RAGManager::embed(const std::string& text) {
+    if (!embeddingEngine) {
+        spdlog::error("Embedding engine not loaded!");
+        return std::vector<float>(dimension, 0.0f);
+    }
     return embeddingEngine->encode(text);
 }
 
@@ -483,6 +563,11 @@ bool RAGManager::addDocument(const std::string& content, const std::string& sour
         return false;
     }
 
+    if (!embeddingEngine) {
+        spdlog::error("Embedding engine not available. Download models first.");
+        return false;
+    }
+
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto chunks = splitText(content, 500);
@@ -490,10 +575,8 @@ bool RAGManager::addDocument(const std::string& content, const std::string& sour
     for (const auto& chunk : chunks) {
         if (chunk.empty()) continue;
 
-        // 生成 embedding
         std::vector<float> embedding = embed(chunk);
 
-        // 插入到数据库
         const char* sql = "INSERT INTO documents (content, source, embedding) VALUES (?, ?, ?)";
         sqlite3_stmt* stmt;
 
@@ -516,15 +599,12 @@ bool RAGManager::addDocument(const std::string& content, const std::string& sour
         int docId = sqlite3_last_insert_rowid(db);
         sqlite3_finalize(stmt);
 
-        // 添加到 FAISS 索引
         currentIndex->add(1, embedding.data());
 
-        // 更新 ID 映射
         int64_t faissId = idMap.size();
         idMap.push_back(docId);
         reverseIdMap[docId] = static_cast<int>(faissId);
 
-        // 如果当前使用 GPU，同时添加到 GPU 索引
 #ifdef FAISS_GPU_ENABLED
         if (currentDevice == DeviceType::GPU && gpuIndex && currentIndex != gpuIndex) {
             gpuIndex->add(1, embedding.data());
@@ -587,17 +667,20 @@ bool RAGManager::loadDirectory(const std::string& path) {
 // 搜索
 // ============================================
 std::vector<Document> RAGManager::search(const std::string& query, int topK) {
-
     std::vector<Document> results;
 
     if (!isEnabled()) return results;
+
+    if (!embeddingEngine) {
+        spdlog::error("Embedding engine not available");
+        return results;
+    }
 
     auto queryEmbed = embeddingEngine->encode(query);
 
     std::vector<float> distances(topK * 5);
     std::vector<faiss::idx_t> indices(topK * 5);
 
-    //先多召回（重要）
     currentIndex->search(1, queryEmbed.data(), topK * 5,
         distances.data(), indices.data());
 
@@ -614,18 +697,24 @@ std::vector<Document> RAGManager::search(const std::string& query, int topK) {
         int docId = idMap[indices[i]];
         auto doc = getDocumentFromDB(docId);
 
-        float score = reranker->score(query, doc.content);
+        float score = 0.0f;
+        if (reranker) {
+            score = reranker->score(query, doc.content);
+        }
+        else {
+            // 没有 reranker 时退回使用 FAISS 距离
+            score = distances[i];
+        }
 
         candidates.push_back({ doc, score });
     }
 
-    // rerank排序
     std::sort(candidates.begin(), candidates.end(),
         [](auto& a, auto& b) {
             return a.score > b.score;
         });
 
-    for (int i = 0; i < topK && i < candidates.size(); i++) {
+    for (int i = 0; i < topK && i < static_cast<int>(candidates.size()); i++) {
         results.push_back(candidates[i].doc);
     }
 
@@ -659,7 +748,7 @@ std::string RAGManager::buildRAGPrompt(const std::string& query, int topK) {
 }
 
 // ============================================
-// 从数据库获取文档
+// 数据库获取文档
 // ============================================
 Document RAGManager::getDocumentFromDB(int docId) {
     Document doc;
@@ -697,8 +786,6 @@ bool RAGManager::deleteDocumentFromDB(int docId) {
         sqlite3_bind_int(stmt, 1, docId);
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
-
-        // 重建索引以移除已删除的文档
         rebuildIndex();
         return true;
     }
@@ -711,28 +798,23 @@ bool RAGManager::deleteDocument(int id) {
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    // 从映射中删除
     auto it = reverseIdMap.find(id);
     if (it != reverseIdMap.end()) {
         reverseIdMap.erase(it);
     }
 
-    // 从数据库删除
     return deleteDocumentFromDB(id);
 }
 
 // ============================================
-// 清空所有文档
+// 清空文档
 // ============================================
 void RAGManager::clear() {
     if (!initialized) return;
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    // 清空数据库
     sqlite3_exec(db, "DELETE FROM documents", nullptr, nullptr, nullptr);
-
-    // 重建索引
     rebuildIndex();
 
     spdlog::info("Cleared all documents");
@@ -801,10 +883,8 @@ bool RAGManager::switchDevice(DeviceType device) {
 #ifdef FAISS_GPU_ENABLED
     if (device == DeviceType::GPU) {
         if (checkGPUAvailability() && createGPUIndex()) {
-            // 复制数据到 GPU
             if (cpuIndex->ntotal > 0) {
                 spdlog::info("Copying {} vectors to GPU...", cpuIndex->ntotal);
-                // 重新加载数据到 GPU
                 loadIndexFromDatabase();
             }
             currentIndex = gpuIndex;
@@ -849,6 +929,11 @@ std::string RAGManager::getIndexInfo() const {
     info += "\nDimension: " + std::to_string(dimension);
     info += "\nDocuments in DB: " + std::to_string(getDocumentCount());
 
+    info += "\nEmbedding engine: ";
+    info += embeddingEngine ? "loaded" : "NOT LOADED";
+    info += "\nReranker engine: ";
+    info += reranker ? "loaded" : "NOT LOADED";
+
     return info;
 }
 
@@ -858,8 +943,6 @@ std::string RAGManager::getDeviceStatus() const {
 
     status += "\nGPU available: ";
 #ifdef FAISS_GPU_ENABLED
-    // 注意：这里不调用 checkGPUAvailability()，因为它是非 const 的
-    // 直接返回编译时信息
     status += "Yes (if CUDA is properly installed)";
 #else
     status += "No (compiled without GPU support)";
