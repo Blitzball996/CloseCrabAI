@@ -3,15 +3,15 @@
 #include <string>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
-#include "WordPieceTokenizer.h"
+#include "HFTokenizer.h"
 
 class RerankerEngine {
 public:
-    /// @param modelPath  ONNX 模型路径 (如 models/bge-reranker-base/model.onnx)
-    /// @param vocabPath  vocab.txt 路径 (如 models/bge-reranker-base/vocab.txt)
-    /// @param useGPU     是否尝试使用 CUDA
+    /// @param modelPath          ONNX 模型路径
+    /// @param tokenizerJsonPath  tokenizer.json 路径
+    /// @param useGPU             是否尝试使用 CUDA
     RerankerEngine(const std::string& modelPath,
-        const std::string& vocabPath,
+        const std::string& tokenizerJsonPath,
         bool useGPU = true);
     ~RerankerEngine() = default;
 
@@ -22,5 +22,5 @@ private:
     std::unique_ptr<Ort::Session> session;
     Ort::SessionOptions sessionOptions;
 
-    std::unique_ptr<WordPieceTokenizer> tokenizer;
+    std::unique_ptr<HFTokenizer> tokenizer;
 };

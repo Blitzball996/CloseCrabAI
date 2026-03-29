@@ -10,17 +10,10 @@ echo.
 :: ============================================
 echo [第1步] 选择 LLM 大语言模型:
 echo.
-echo [1] Qwen2.5-7B (推荐, 4.5GB) - 适合 8GB 显存
-echo     日常使用，速度快，中文能力强
-echo.
-echo [2] Qwen2.5-14B (更强, 8.5GB) - 适合 12GB 显存
-echo     推理能力更强，适合复杂任务
-echo.
-echo [3] Qwen2.5-3B (轻量, 2GB) - 适合 6GB 显存
-echo     速度快，显存占用低
-echo.
-echo [4] Qwen2.5-1.5B (极速, 1.2GB) - 适合 4GB 显存
-echo     响应极快，适合简单对话
+echo [1] Qwen2.5-7B  (推荐, 4.5GB, 8GB显存)
+echo [2] Qwen2.5-14B (更强, 8.5GB, 12GB显存)
+echo [3] Qwen2.5-3B  (轻量, 2GB,  6GB显存)
+echo [4] Qwen2.5-1.5B(极速, 1.2GB, 4GB显存)
 echo.
 set /p choice="请输入数字 (1-4): "
 
@@ -46,17 +39,17 @@ if "%choice%"=="4" (
 )
 
 :: ============================================
-:: 第二部分：RAG 模型（Embedding + Reranker）
+:: 第二部分：RAG 模型
 :: ============================================
 echo.
 echo ========================================
 echo [第2步] RAG 检索增强模型
 echo ========================================
 echo.
-echo RAG 模型用于知识库检索，提升回答质量。
-echo.
-echo   Embedding: BAAI/bge-small-zh-v1.5 (134MB, 支持中文)
-echo   Reranker:  BAAI/bge-reranker-base  (1.1GB)
+echo 来自 onnx-community 预转换仓库:
+echo   Embedding: bge-small-zh-v1.5-ONNX  (~96MB)
+echo   Reranker:  bge-reranker-base-ONNX  (~1.1GB)
+echo   每个模型下载: model.onnx + model.onnx_data + tokenizer.json
 echo.
 set /p rag_choice="是否下载 RAG 模型? (Y/n): "
 if /i "%rag_choice%"=="n" (
@@ -70,24 +63,19 @@ if /i "%rag_choice%"=="n" (
 :: ============================================
 mkdir models 2>nul
 mkdir models\bge-small-zh 2>nul
+mkdir models\bge-small-zh\onnx 2>nul
 mkdir models\bge-reranker-base 2>nul
+mkdir models\bge-reranker-base\onnx 2>nul
 
 :: ============================================
 :: 下载 LLM
 :: ============================================
 echo.
 echo ========================================
-echo 正在下载 LLM: %LLM_NAME% (%LLM_SIZE%)
+echo 下载 LLM: %LLM_NAME% (%LLM_SIZE%)
 echo ========================================
-echo.
-
-curl -L --progress-bar -o "models\%LLM_NAME%" "%LLM_URL%"
-
-if %errorlevel% equ 0 (
-    echo [OK] LLM 下载完成: models\%LLM_NAME%
-) else (
-    echo [FAIL] LLM 下载失败！请检查网络后重试。
-)
+curl -L --retry 3 --retry-delay 5 --progress-bar -o "models\%LLM_NAME%" "%LLM_URL%"
+if %errorlevel% equ 0 ( echo [OK] LLM 完成 ) else ( echo [FAIL] LLM 失败 )
 
 :: ============================================
 :: 下载 RAG 模型
@@ -95,55 +83,48 @@ if %errorlevel% equ 0 (
 if "%DOWNLOAD_RAG%"=="1" (
     echo.
     echo ========================================
-    echo 正在下载 Embedding 模型: bge-small-zh-v1.5
+    echo 下载 Embedding: bge-small-zh-v1.5-ONNX
     echo ========================================
-    echo.
 
-    echo [1/3] 下载 model.onnx (约 90MB)...
-    curl -L --progress-bar -o "models\bge-small-zh\model.onnx" ^
-        "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx"
+    echo [1/6] model.onnx...
+    curl -L --retry 3 --retry-delay 5 --progress-bar -o "models\bge-small-zh\onnx\model_quantized.onnx" ^
+        "https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main/onnx/model_quantized.onnx
+"
+    if %errorlevel% equ 0 ( echo       [OK] ) else ( echo       [FAIL] )
 
-    if %errorlevel% equ 0 (
-        echo [OK] Embedding model.onnx 下载完成
-    ) else (
-        echo [FAIL] Embedding model.onnx 下载失败
-    )
+    echo [2/6] model.onnx_data...
+    curl -L --retry 3 --retry-delay 5 --progress-bar -o "models\bge-small-zh\onnx\model_quantized.onnx_data" ^
+        "https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main/onnx/model_quantized.onnx_data"
+    if %errorlevel% equ 0 ( echo       [OK] ) else ( echo       [INFO] 可能不存在 )
 
-    echo [2/3] 下载 vocab.txt...
-    curl -L --progress-bar -o "models\bge-small-zh\vocab.txt" ^
-        "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/vocab.txt"
-
-    if %errorlevel% equ 0 (
-        echo [OK] Embedding vocab.txt 下载完成
-    ) else (
-        echo [FAIL] Embedding vocab.txt 下载失败
-    )
+    echo [3/6] tokenizer.json...
+    curl -L --retry 3 --retry-delay 5 --progress-bar -o "models\bge-small-zh\tokenizer.json" ^
+        "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/tokenizer.json"
+    if %errorlevel% equ 0 ( echo       [OK] ) else ( echo       [FAIL] )
 
     echo.
     echo ========================================
-    echo 正在下载 Reranker 模型: bge-reranker-base
+    echo 下载 Reranker: bge-reranker-base-ONNX
     echo ========================================
-    echo.
 
-    echo [3/3] 下载 model.onnx (约 1.1GB)...
-    curl -L --progress-bar -o "models\bge-reranker-base\model.onnx" ^
-        "https://huggingface.co/BAAI/bge-reranker-base/resolve/main/onnx/model.onnx"
+    echo [4/6] model.onnx (约1.1GB, 请耐心等待)...
+    curl -L --retry 3 --retry-delay 5 --progress-bar -o "models\bge-reranker-base\onnx\model_uint8.onnx
+" ^
+        "https://huggingface.co/onnx-community/bge-reranker-base-ONNX/resolve/main/onnx/model_uint8.onnx
+"
+    if %errorlevel% equ 0 ( echo       [OK] ) else ( echo       [FAIL] )
 
-    if %errorlevel% equ 0 (
-        echo [OK] Reranker model.onnx 下载完成
-    ) else (
-        echo [FAIL] Reranker model.onnx 下载失败
-    )
+    echo [5/6] model.onnx_data...
+    curl -L --retry 3 --retry-delay 5 --progress-bar -o "models\bge-reranker-base\onnx\model_uint8.onnx
+_data" ^
+        "https://huggingface.co/onnx-community/bge-reranker-base-ONNX/resolve/main/onnx/model_uint8.onnx
+_data"
+    if %errorlevel% equ 0 ( echo       [OK] ) else ( echo       [INFO] 可能不存在 )
 
-    echo 下载 vocab.txt...
-    curl -L --progress-bar -o "models\bge-reranker-base\vocab.txt" ^
-        "https://huggingface.co/BAAI/bge-reranker-base/resolve/main/vocab.txt"
-
-    if %errorlevel% equ 0 (
-        echo [OK] Reranker vocab.txt 下载完成
-    ) else (
-        echo [FAIL] Reranker vocab.txt 下载失败
-    )
+    echo [6/6] tokenizer.json...
+    curl -L --retry 3 --retry-delay 5 --progress-bar -o "models\bge-reranker-base\tokenizer.json" ^
+        "https://huggingface.co/onnx-community/bge-reranker-base-ONNX/resolve/main/tokenizer.json"
+    if %errorlevel% equ 0 ( echo       [OK] ) else ( echo       [FAIL] )
 )
 
 :: ============================================
@@ -153,16 +134,20 @@ echo.
 echo ========================================
 echo 下载汇总:
 echo ========================================
-echo   LLM:       models\%LLM_NAME%
+echo   LLM: models\%LLM_NAME%
 if "%DOWNLOAD_RAG%"=="1" (
-    echo   Embedding: models\bge-small-zh\model.onnx
-    echo              models\bge-small-zh\vocab.txt
-    echo   Reranker:  models\bge-reranker-base\model.onnx
-    echo              models\bge-reranker-base\vocab.txt
+    echo   Embedding:
+    echo     models\bge-small-zh\onnx\model_quantized.onnx
+    echo     models\bge-small-zh\onnx\model_quantized.onnx_data
+    echo     models\bge-small-zh\tokenizer.json
+    echo   Reranker:
+    echo     models\bge-reranker-base\onnx\model_uint8.onnx
+
+    echo     models\bge-reranker-base\onnx\model_uint8.onnx
+_data
+    echo     models\bge-reranker-base\tokenizer.json
 ) else (
-    echo   RAG 模型: 跳过（可稍后运行此脚本重新下载）
+    echo   RAG: 跳过
 )
 echo ========================================
-echo.
-
 pause

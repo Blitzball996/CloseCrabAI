@@ -21,12 +21,14 @@ websocket:
   enabled: true
   port: 9001
 
-# ---- RAG 配置（新增） ----
+# ---- RAG 配置 ----
+# 所有模型来自 onnx-community 的预转换仓库
+# model.onnx + model.onnx_data 必须放在同一目录
 rag:
-  # Embedding 模型 (BAAI/bge-small-zh-v1.5, ONNX 格式)
-  embedding_model_path: "models/bge-small-zh/model.onnx"
-  embedding_vocab_path: "models/bge-small-zh/vocab.txt"
+  # Embedding: onnx-community/bge-small-zh-v1.5-ONNX
+  embedding_model_path: "models/bge-small-zh/onnx/model.onnx"
+  embedding_tokenizer_path: "models/bge-small-zh/tokenizer.json"
  
-  # Reranker 模型 (BAAI/bge-reranker-base, ONNX 格式)
-  reranker_model_path: "models/bge-reranker-base/model.onnx"
-  reranker_vocab_path: "models/bge-reranker-base/vocab.txt"
+  # Reranker: onnx-community/bge-reranker-base-ONNX (或你自己导出的)
+  reranker_model_path: "models/bge-reranker-base/onnx/model.onnx"
+  reranker_tokenizer_path: "models/bge-reranker-base/tokenizer.json"

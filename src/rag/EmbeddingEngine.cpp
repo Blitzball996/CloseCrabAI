@@ -3,13 +3,13 @@
 #include <spdlog/spdlog.h>
 
 EmbeddingEngine::EmbeddingEngine(const std::string& modelPath,
-    const std::string& vocabPath,
+    const std::string& tokenizerJsonPath,
     bool useGPU)
     : env(ORT_LOGGING_LEVEL_WARNING, "Embedding")
 {
-    // ---- 加载 WordPiece tokenizer ----
-    tokenizer = std::make_unique<WordPieceTokenizer>(vocabPath);
-    spdlog::info("[Embedding] WordPiece tokenizer loaded ({} tokens)", tokenizer->vocabSize());
+    // ---- 加载 tokenizer.json ----
+    tokenizer = std::make_unique<HFTokenizer>(tokenizerJsonPath);
+    spdlog::info("[Embedding] Tokenizer loaded ({} tokens)", tokenizer->vocabSize());
 
     sessionOptions.SetIntraOpNumThreads(4);
 
@@ -53,14 +53,14 @@ EmbeddingEngine::EmbeddingEngine(const std::string& modelPath,
 }
 
 std::vector<float> EmbeddingEngine::encode(const std::string& text) {
-    // 1. 使用真正的 WordPiece tokenizer
-    auto tokens = tokenizer->tokenizeSingle(text);
+    // 1. 用 HFTokenizer 编码（自动加 [CLS] / [SEP]）
+    auto tokens = tokenizer->encodeSingle(text);
     std::vector<int64_t> shape = { 1, static_cast<int64_t>(tokens.size()) };
 
-    // 2. 创建 attention_mask (全1)
+    // 2. attention_mask (全1)
     std::vector<int64_t> attention_mask(tokens.size(), 1);
 
-    // 3. 创建 token_type_ids (全0，单句)
+    // 3. token_type_ids (全0，单句)
     std::vector<int64_t> token_type_ids(tokens.size(), 0);
 
     // 4. 创建输入张量
@@ -79,40 +79,73 @@ std::vector<float> EmbeddingEngine::encode(const std::string& text) {
         memory_info, token_type_ids.data(), token_type_ids.size(),
         shape.data(), shape.size());
 
-    // 5. 准备输入
-    const char* input_names[] = { "input_ids", "attention_mask", "token_type_ids" };
+    // 5. 检测模型需要哪些输入
+    std::vector<const char*> input_names;
     std::vector<Ort::Value> input_tensors;
+
+    input_names.push_back("input_ids");
     input_tensors.push_back(std::move(input_ids_tensor));
+
+    input_names.push_back("attention_mask");
     input_tensors.push_back(std::move(attention_mask_tensor));
-    input_tensors.push_back(std::move(token_type_ids_tensor));
 
-    const char* output_names[] = { "last_hidden_state" };
+    // 检查模型是否需要 token_type_ids
+    Ort::AllocatorWithDefaultOptions allocator;
+    size_t numInputs = session->GetInputCount();
+    bool needsTokenTypeIds = false;
+    for (size_t i = 0; i < numInputs; i++) {
+        auto name = session->GetInputNameAllocated(i, allocator);
+        if (std::string(name.get()) == "token_type_ids") {
+            needsTokenTypeIds = true;
+            break;
+        }
+    }
+    if (needsTokenTypeIds) {
+        input_names.push_back("token_type_ids");
+        input_tensors.push_back(std::move(token_type_ids_tensor));
+    }
 
-    // 6. 运行推理
+    // 6. 检测输出名称
+    size_t numOutputs = session->GetOutputCount();
+    std::vector<std::string> outputNameStrs;
+    std::vector<const char*> output_names;
+    for (size_t i = 0; i < numOutputs; i++) {
+        auto name = session->GetOutputNameAllocated(i, allocator);
+        outputNameStrs.push_back(name.get());
+    }
+    for (auto& s : outputNameStrs) output_names.push_back(s.c_str());
+
+    // 7. 运行推理
     auto output_tensors = session->Run(
         Ort::RunOptions{ nullptr },
-        input_names, input_tensors.data(), input_tensors.size(),
-        output_names, 1);
+        input_names.data(), input_tensors.data(), input_tensors.size(),
+        output_names.data(), output_names.size());
 
-    // 7. 获取输出
+    // 8. 获取输出 (取第一个输出)
     float* data = output_tensors[0].GetTensorMutableData<float>();
     auto typeInfo = output_tensors[0].GetTensorTypeAndShapeInfo();
     auto shape_out = typeInfo.GetShape();
 
     int64_t seq_len = shape_out[1];
-    int64_t hidden_dim = shape_out[2];
+    int64_t hidden_dim = shape_out.size() >= 3 ? shape_out[2] : shape_out[1];
 
-    // 8. Mean pooling
-    std::vector<float> embedding(hidden_dim, 0.0f);
-    for (int64_t i = 0; i < seq_len; i++) {
-        for (int64_t j = 0; j < hidden_dim; j++) {
-            embedding[j] += data[i * hidden_dim + j];
+    if (shape_out.size() >= 3) {
+        // [batch, seq_len, hidden_dim] → Mean pooling
+        std::vector<float> embedding(hidden_dim, 0.0f);
+        for (int64_t i = 0; i < seq_len; i++) {
+            for (int64_t j = 0; j < hidden_dim; j++) {
+                embedding[j] += data[i * hidden_dim + j];
+            }
         }
+        for (int64_t j = 0; j < hidden_dim; j++) {
+            embedding[j] /= static_cast<float>(seq_len);
+        }
+        dimension = static_cast<int>(hidden_dim);
+        return embedding;
     }
-    for (int64_t j = 0; j < hidden_dim; j++) {
-        embedding[j] /= static_cast<float>(seq_len);
+    else {
+        // [batch, hidden_dim] → 直接返回
+        dimension = static_cast<int>(shape_out[1]);
+        return std::vector<float>(data, data + dimension);
     }
-
-    dimension = static_cast<int>(hidden_dim);
-    return embedding;
 }
