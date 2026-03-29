@@ -1,4 +1,4 @@
-# CloseCrab ÅäÖÃÎÄ¼ş
+# CloseCrab é…ç½®æ–‡ä»¶
 server:
   port: 9001
   host: "127.0.0.1"
@@ -10,13 +10,23 @@ logging:
   level: "info"
   file: "logs/closecrab.log"
 
-# LLM ÅäÖÃ
+# LLM é…ç½®
 llm:
-  model_path: "Qwen2.5-7B-Instruct-Uncensored.Q4_K_M.gguf"
+  model_path: "models/deepseek-moe-16b-chat.Q4_K_M.gguf"
   max_tokens: 8192
   temperature: 0.7
 
-# WebSocket ÅäÖÃ
+# WebSocket é…ç½®
 websocket:
   enabled: true
   port: 9001
+
+# ---- RAG é…ç½®ï¼ˆæ–°å¢ï¼‰ ----
+rag:
+  # Embedding æ¨¡å‹ (BAAI/bge-small-zh-v1.5, ONNX æ ¼å¼)
+  embedding_model_path: "models/bge-small-zh/model.onnx"
+  embedding_vocab_path: "models/bge-small-zh/vocab.txt"
+ 
+  # Reranker æ¨¡å‹ (BAAI/bge-reranker-base, ONNX æ ¼å¼)
+  reranker_model_path: "models/bge-reranker-base/model.onnx"
+  reranker_vocab_path: "models/bge-reranker-base/vocab.txt"
