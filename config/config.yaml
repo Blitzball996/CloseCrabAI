@@ -13,7 +13,7 @@ logging:
 # LLM ≈‰÷√
 llm:
   model_path: "Qwen2.5-7B-Instruct-Uncensored.Q4_K_M.gguf"
-  max_tokens: 512
+  max_tokens: 8192
   temperature: 0.7
 
 # WebSocket ≈‰÷√
